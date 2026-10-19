@@ -1,0 +1,18 @@
+# ============================================================================
+# 보안 최우선 (.gitignore): 민감한 환경변수(.env) 및 정산 계좌/암호화 키 유출 원천 차단
+# (.env.example 템플릿 파일만 Git에 포함됩니다)
+# ============================================================================
+.env
+**/.env
+.env.local
+**/.env.local
+.env.production
+**/.env.production
+
+# Node.js 의존성 및 임시 로그
+node_modules/
+**/node_modules/
+npm-debug.log*
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>웰스볼트 AI - 개인재산 & 임대·금융소득 절세 관리 (+ HAK ETF 관리 & 금융권 자산 불러오기)</title>
+    <link rel="stylesheet" href="/styles/tds-wealth.css" />
+    <link rel="stylesheet" href="/styles/hak-etf.css" />
+</head>
+<body>
+    <div class="tds-toast" id="tdsToast">알림 메시지</div>
+
+    <div class="toss-webview-shell">
+        
+        <!-- 1. 상단 리퀴드 글래스 헤더 + HAK ETF 관리 바로가기 + 다크/라이트 모드 스위치 -->
+        <header class="toss-header">
+            <div class="toss-header-left">
+                <div class="toss-logo-badge">🏦</div>
+                <span class="toss-header-title" id="headerAppTitle">웰스볼트 AI</span>
+            </div>
+            <div class="header-right-actions">
+                <button
+                    type="button"
+                    class="back-to-wealth-btn"
+                    id="openHakEtfHeaderBtn"
+                    title="독립된 HAK ETF 관리 미니앱 열기"
+                    style="background: rgba(37, 99, 235, 0.14); color: var(--accent-primary); border-color: rgba(37, 99, 235, 0.35);"
+                >
+                    📈 HAK ETF 관리
+                </button>
+                <div class="security-pill" title="개인 재산·소득 데이터 AES-256-GCM 암호화 적용">
+                    🔒 AES-256
+                </div>
+                <button
+                    type="button"
+                    class="theme-toggle-btn"
+                    id="themeToggleBtn"
+                    title="크리스탈 라이트 / 스페이셜 다크 글래스 모드 전환"
+                >
+                    🌙
+                </button>
+            </div>
+        </header>
+
+        <!-- 2. [차별화 #1] iOS Dynamic Island Live Activity Capsule -->
+        <div class="dynamic-island-wrap">
+            <div class="dynamic-island-pill" id="dynamicIslandPill" title="터치하여 실시간 PB 절세·건보료 엔진 상태 보기">
+                <div class="dynamic-island-top">
+                    <div class="island-left">
+                        <span class="ticker-live-dot"></span>
+                        <span class="ticker-message" id="socialTickerText">
+                            방금 서울 서초구 최*석님이 금융·임대소득 건보료 방어 플랜으로 연 310만 원을 절세했어요
+                        </span>
+                    </div>
+                    <span class="island-expand-hint" id="islandHintText">터치 ▼</span>
+                </div>
+                <div class="dynamic-island-expanded">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span>📊 2026 세법·건보료 엔진: <strong style="color: #FBBF24;">최신 반영됨</strong></span>
+                        <span>🔐 재산 데이터 AES-256-GCM 암호화</span>
+                    </div>
+                    <div>
+                        카카오페이 · 은행(신협/카뱅) · 증권(삼성/미래에셋/HAK ETF) · 부동산 · 보험 통합 스캐너
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 세그먼트 컨트롤 탭 (자산 포커스 모드 전환) -->
+        <nav class="loop-switcher-bar" aria-label="개인재산 진단 포커스 전환">
+            <div class="segmented-track">
+                <button type="button" class="loop-tab-btn active" data-mode="TOTAL_WEALTH">
+                    통합 재산·절세
+                </button>
+                <button type="button" class="loop-tab-btn" data-mode="REALESTATE_RENT">
+                    부동산·임대소득
+                </button>
+                <button type="button" class="loop-tab-btn" data-mode="FINANCE_DIVIDEND">
+                    은행·증권·배당
+                </button>
+            </div>
+        </nav>
+
+        <!-- 4. 메인 컨텐츠 영역 -->
+        <main class="toss-main">
+
+            <!-- 3단계 퍼널 스텝 인디케이터 -->
+            <div class="funnel-steps-bar">
+                <div class="funnel-step-item active" id="funnelStep1">
+                    <span class="step-num-circle">1</span>
+                    <span>재산·소득 입력</span>
+                </div>
+                <span style="color: var(--text-muted); font-size: 12px;">➔</span>
+                <div class="funnel-step-item" id="funnelStep2">
+                    <span class="step-num-circle">2</span>
+                    <span>순자산·비중 진단</span>
+                </div>
+                <span style="color: var(--text-muted); font-size: 12px;">➔</span>
+                <div class="funnel-step-item" id="funnelStep3">
+                    <span class="step-num-circle">3</span>
+                    <span>절세·건보료 처방</span>
+                </div>
+            </div>
+
+            <!-- 삼성자산운용 KODEX 기반 'HAK ETF 관리' 미니앱 바로가기 배너 -->
+            <section class="hak-bridge-banner" aria-label="HAK ETF 관리 미니앱 연동 모듈">
+                <div class="hak-bridge-top">
+                    <span class="hak-bridge-badge">📈 SAMSUNG KODEX × HAK ETF 관리</span>
+                    <span style="font-size: 11px; font-weight: 800; color: #00E682;" id="hakSyncBadgeText">
+                        ⚡ 내 증권·금융소득 실시간 연동
+                    </span>
+                </div>
+                <div class="hak-bridge-title">
+                    매월 받는 월배당 ETF 캘린더 & 구성종목(PDF) 비교 연구소
+                </div>
+                <p class="hak-bridge-desc" id="hakSyncStatusNotice">
+                    목표 월배당금(예: 월 100만 원) 시뮬레이션, KODEX 테마별 랭킹, ETF 1:1 비교부터 내 금융소득 2,000만 원 절세 계산까지 한 번에 설계하고 개인재정 앱에 자동 반영하세요!
+                </p>
+                <button type="button" class="hak-bridge-btn" id="openHakEtfBannerBtn">
+                    🚀 HAK ETF 관리 미니앱 열기 (월배당 계산 · ETF 비교 · 절세 연동)
+                </button>
+            </section>
+
+            <!-- [차별화 #2] Apple Bento Grid (비대칭 2열 모듈형 대시보드 레이아웃) -->
+            <section class="bento-dashboard-grid" aria-label="벤토 그리드 핵심 요약">
+                <div class="bento-tile-wide">
+                    <div class="hero-top-row">
+                        <span class="hero-badge" id="heroModeBadge">VIP 프라이빗 뱅킹(PB) AI 에디션</span>
+                        <span class="diff-trend-tag">💎 iOS·Google 차별화 UI</span>
+                    </div>
+                    <h1 class="hero-title" id="heroMainTitle">
+                        은행·증권·부동산·보험 내 재산,<br />세금과 건보료 누수부터 막으세요
+                    </h1>
+                    <p class="hero-subtitle" id="heroSubTitle">
+                        예적금·주식·부동산·동산·보험 5대 자산 비중과 이자·배당 금융소득 및 월세 임대소득에 따른 종소세·건보료 폭탄 위험을 정밀 스캔해요.
+                    </p>
+                    <div class="env-status-banner">
+                        <span>판매자: <strong id="envOwnerDisplay">로딩중...</strong></span>
+                        <span>동적 설정가: <strong id="envPriceDisplay">로딩중...</strong></span>
+                    </div>
+                </div>
+
+                <div class="bento-tile-half">
+                    <span class="bento-tile-label">🚨 금융소득·보수외소득 기준</span>
+                    <div class="bento-tile-value">2,000만 / 1,000만</div>
+                    <span class="bento-tile-sub">종소세 합산 및 피부양자 탈락선</span>
+                </div>
+
+                <div class="bento-tile-half">
+                    <span class="bento-tile-label">💰 ISA·보험 리모델링 시</span>
+                    <div class="bento-tile-value" style="color: var(--toss-success);">연 평균 285만 원</div>
+                    <span class="bento-tile-sub">절세 + 고정비 세이브 기대효과</span>
+                </div>
+            </section>
+
+            <!-- [SCR-01: 5대 자산(은행/증권/부동산/동산/보험) + 2대 소득(금융/임대) 입력 뷰] -->
+            <section class="tds-card" id="inputSection">
+
+                <!-- [신규 탑재] 💛 카카오페이 · 은행 · 증권사 · 보험사 나의 자산내역 통합 불러오기 허브 -->
+                <div class="mydata-import-box" id="myDataImportBox">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 12px; font-weight: 800; color: var(--text-primary);">
+                            📲 금융권 마이데이터(MyData) 원클릭 자산 연동
+                        </span>
+                        <span style="font-size: 11px; font-weight: 800; color: var(--toss-success);" id="myDataSyncBadge">
+                            🔒 AES-256 암호화 보호
+                        </span>
+                    </div>
+                    <p style="font-size: 11px; color: var(--text-secondary); margin-bottom: 10px;">
+                        카카오페이 · 신협 · 카카오뱅크 · IBK기업 · 삼성증권(ISA) · 미래에셋 · 키움 · 메리츠화재 등 내 금융권 계좌 잔고와 이자·배당 소득을 한 번에 불러와 아래 칸에 자동으로 채워줍니다.
+                    </p>
+                    <button type="button" class="mydata-trigger-btn" id="openMyDataModalBtn">
+                        💛 카카오페이 · 은행 · 증권사 내 자산내역 불러오기
+                    </button>
+
+                    <!-- 불러온 계좌 상세 내역 및 개별 잔액 직접 수정 패널 -->
+                    <div class="synced-accounts-panel hidden" id="syncedMyDataPanel">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <span style="font-size: 12px; font-weight: 800; color: var(--hak-accent-blue);" id="syncedAccountsHeaderText">
+                                📂 불러온 나의 금융권 계좌 내역
+                            </span>
+                            <span style="font-size: 10px; color: var(--text-muted);">
+                                💡 금액(만 원) 수정 시 자동 재합산
+                            </span>
+                        </div>
+                        <div id="syncedAccountsListContainer"></div>
+                    </div>
+                </div>
+
+                <div class="form-row-2 form-group">
+                    <div>
+                        <label class="form-label" for="userNameInput">
+                            <span>이름 / 호칭</span>
+                            <span style="color: var(--toss-success);">AES-256 암호화</span>
+                        </label>
+                        <input
+                            type="text"
+                            id="userNameInput"
+                            class="tds-input"
+                            value="이춘학"
+                        />
+                    </div>
+                    <div>
+                        <label class="form-label" for="healthInsTypeSelect">건강보험 자격</label>
+                        <select id="healthInsTypeSelect" class="tds-select">
+                            <option value="직장가입자" selected>직장가입자</option>
+                            <option value="지역가입자">지역가입자</option>
+                            <option value="피부양자(은퇴·주부)">피부양자 (은퇴·주부)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 1. 은행 & 2. 증권 자산 (단위: 만 원) -->
+                <div class="form-row-2 form-group">
+                    <div>
+                        <label class="form-label" for="bankAssetInput">
+                            <span>🏦 은행·페이 (예적금·파킹)</span>
+                            <span>단위: 만 원</span>
+                        </label>
+                        <input
+                            type="number"
+                            id="bankAssetInput"
+                            class="tds-input"
+                            value="6500"
+                            min="0"
+                        />
+                    </div>
+                    <div>
+                        <label class="form-label" for="stockAssetInput">
+                            <span>📈 증권 (주식·ETF·ISA)</span>
+                            <button
+                                type="button"
+                                id="openHakEtfInlineBtn"
+                                style="border: none; background: rgba(37, 99, 235, 0.14); color: var(--accent-primary); font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 6px; cursor: pointer;"
+                            >
+                                📊 HAK ETF 계산기 ➔
+                            </button>
+                        </label>
+                        <input
+                            type="number"
+                            id="stockAssetInput"
+                            class="tds-input"
+                            value="8500"
+                            min="0"
+                        />
+                    </div>
+                </div>
+
+                <!-- 3. 부동산 & 4. 동산 자산 (단위: 만 원) -->
+                <div class="form-row-2 form-group">
+                    <div>
+                        <label class="form-label" for="realEstateAssetInput">
+                            <span>🏢 부동산 (실거주·임대)</span>
+                            <span>단위: 만 원</span>
+                        </label>
+                        <input
+                            type="number"
+                            id="realEstateAssetInput"
+                            class="tds-input"
+                            value="45000"
+                            min="0"
+                        />
+                    </div>
+                    <div>
+                        <label class="form-label" for="movableAssetInput">
+                            <span>🚗 동산 (자동차·금·기타)</span>
+                            <span>단위: 만 원</span>
+                        </label>
+                        <input
+                            type="number"
+                            id="movableAssetInput"
+                            class="tds-input"
+                            value="3500"
+                            min="0"
+                        />
+                    </div>
+                </div>
+
+                <!-- 5. 보험료 & 6. 금융소득 & 7. 임대소득 -->
+                <div class="form-row-2 form-group">
+                    <div>
+                        <label class="form-label" for="financialIncomeInput">
+                            <span>💵 연간 금융소득 (이자+배당)</span>
+                            <span>만 원/년</span>
+                        </label>
+                        <input
+                            type="number"
+                            id="financialIncomeInput"
+                            class="tds-input"
+                            value="1650"
+                            min="0"
+                        />
+                    </div>
+                    <div>
+                        <label class="form-label" for="rentalIncomeInput">
+                            <span>🏘️ 월간 임대소득 (월세·상가)</span>
+                            <span>만 원/월</span>
+                        </label>
+                        <input
+                            type="number"
+                            id="rentalIncomeInput"
+                            class="tds-input"
+                            value="120"
+                            min="0"
+                        />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="insuranceMonthlyInput">
+                        <span>🛡️ 월 납입 보험료 합계 (메리츠화재·신협공제 등 포함)</span>
+                        <span>만 원/월</span>
+                    </label>
+                    <input
+                        type="number"
+                        id="insuranceMonthlyInput"
+                        class="tds-input"
+                        value="48"
+                        min="0"
+                    />
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">현재 가장 우선순위가 높은 재산 관리 목표 (Material Expressive 모핑 칩)</label>
+                    <div class="chip-group" id="goalChipGroup">
+                        <button type="button" class="tds-chip selected" data-goal="금융·임대소득 절세 및 건보료 방어">🛡️ 금융·임대소득 절세 & 건보료 방어</button>
+                        <button type="button" class="tds-chip" data-goal="은행·증권 ISA 및 배당 캐시플로우 극대화">📈 은행·증권 배당 캐시플로우 확대</button>
+                        <button type="button" class="tds-chip" data-goal="부동산·동산 리밸런싱 및 유동성 확보">🏢 부동산·동산 비중 리밸런싱</button>
+                        <button type="button" class="tds-chip" data-goal="보험료 다이어트 및 은퇴 연금 준비">💊 보험료 구조조정 & 노후 연금</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- [SCR-02: AI 프라이빗 뱅킹 스캔 로딩 뷰] -->
+            <section class="tds-card hidden" id="loadingSection">
+                <div class="loading-container">
+                    <div class="vault-spinner">🏦</div>
+                    <h2 style="font-size: 18px; font-weight: 800; margin-bottom: 6px;">
+                        개인 재산·소득 데이터를 AES-256으로 잠그고<br />5대 자산 비중과 과세·건보료 임계점을 계산 중이에요
+                    </h2>
+                    <p style="font-size: 13px; color: var(--text-secondary);">
+                        은행 · 증권(HAK ETF) · 부동산 · 동산 · 보험 · 임대/금융소득 통합 시뮬레이션 중...
+                    </p>
+                </div>
+            </section>
+
+            <!-- [SCR-03 & SCR-05: 무료 순자산·포트폴리오 대시보드 + 유료 블러 / 잠금 해제 뷰] -->
+            <div class="hidden" id="resultContainer" style="display: flex; flex-direction: column; gap: 14px;">
+                
+                <!-- 4-1. 무료 5대 자산 통합 브리핑 카드 -->
+                <section class="tds-card">
+                    <span class="hero-badge" style="margin-bottom: 6px;">무료 5대 자산 & 패시브 인컴 통합 진단 완료</span>
+                    <p style="font-size: 13px; color: var(--text-secondary); font-weight: 600;" id="freeUserHeaderText">
+                        진단 완료
+                    </p>
+
+                    <div class="networth-hero-box">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 12px; color: #CBD5E1; font-weight: 600;">통합 추정 순자산 (5대 자산 합산)</span>
+                            <span style="font-size: 12px; color: #38BDF8; font-weight: 700;" id="freePassiveIncomeBadge">연 패시브소득 0원</span>
+                        </div>
+                        <div class="networth-big-text" id="freeNetWorthText">0원</div>
+
+                        <!-- 5대 자산군 비중 컬러 스택 바 -->
+                        <div class="allocation-stack-bar">
+                            <div class="alloc-segment" id="barBank" style="background: var(--color-bank); width: 20%;"></div>
+                            <div class="alloc-segment" id="barStock" style="background: var(--color-stock); width: 20%;"></div>
+                            <div class="alloc-segment" id="barRealEstate" style="background: var(--color-realestate); width: 40%;"></div>
+                            <div class="alloc-segment" id="barMovable" style="background: var(--color-movable); width: 10%;"></div>
+                            <div class="alloc-segment" id="barInsurance" style="background: var(--color-insurance); width: 10%;"></div>
+                        </div>
+
+                        <div class="allocation-legend">
+                            <span class="legend-item"><span class="legend-dot" style="background: var(--color-bank);"></span>은행 <strong id="pctBank">0%</strong></span>
+                            <span class="legend-item"><span class="legend-dot" style="background: var(--color-stock);"></span>증권 <strong id="pctStock">0%</strong></span>
+                            <span class="legend-item"><span class="legend-dot" style="background: var(--color-realestate);"></span>부동산 <strong id="pctRealEstate">0%</strong></span>
+                            <span class="legend-item"><span class="legend-dot" style="background: var(--color-movable);"></span>동산 <strong id="pctMovable">0%</strong></span>
+                            <span class="legend-item"><span class="legend-dot" style="background: var(--color-insurance);"></span>보험 <strong id="pctInsurance">0%</strong></span>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 700;">
+                        <span>나의 재산 균형 & 세무·건보료 방어 지수</span>
+                        <span style="color: var(--accent-primary);" id="freeHealthScoreText">85점</span>
+                    </div>
+
+                    <div style="margin-top: 10px; font-size: 11px; color: var(--text-muted); word-break: break-all;">
+                        🔐 <strong>암호화 저장 증적(AES-256-GCM):</strong> <span id="cryptoAuditText"></span>
+                    </div>
+                </section>
+
+                <!-- 4-2. 유료 블러(Paywall) 및 잠금 해제 4대 영역 프라이빗 뱅킹 처방전 카드 -->
+                <section class="tds-card paywall-wrapper" id="paywallCard">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                        <h3 style="font-size: 17px; font-weight: 800;">🏛️ 4대 영역 맞춤 절세 · 리밸런싱 처방전</h3>
+                        <span class="hero-badge" id="unlockStatusBadge" style="margin-bottom: 0; background: var(--toss-danger-bg); color: var(--toss-danger);">
+                            🔒 유료 잠금
+                        </span>
+                    </div>
+
+                    <div class="blurred-content" id="premiumReportContent">
+                        <div id="wealthSectionsList"></div>
+
+                        <div style="margin-top: 16px; background: var(--input-bg); padding: 16px; border-radius: 16px;">
+                            <h4 style="font-size: 14px; font-weight: 800; color: var(--accent-primary); margin-bottom: 8px;">
+                                ✅ 즉시 실행 가능한 3대 프라이빗 뱅킹 액션 플랜 (연간 기대 효과: <span id="annualSaveTotalText">0원</span>)
+                            </h4>
+                            <div id="checklistContainer" style="font-size: 13px; font-weight: 600;"></div>
+                        </div>
+                    </div>
+
+                    <div class="paywall-overlay" id="paywallOverlay">
+                        <div class="lock-circle">🏛️</div>
+                        <span style="font-size: 11px; font-weight: 800; color: #FBBF24; letter-spacing: 0.5px; margin-bottom: 4px;">
+                            PRIVATE WEALTH & TAX SHIELD
+                        </span>
+                        <h4 style="font-size: 19px; font-weight: 800; margin-bottom: 8px; color: #FFFFFF;">
+                            연간 약 <span id="teaserAnnualSaveText" style="color: #00E682;">300만 원</span>을 아끼는<br />절세·건보료 방어 리포트가 완성되었어요!
+                        </h4>
+                        <p style="font-size: 13px; color: #CBD5E1; margin-bottom: 18px;">
+                            금융소득·임대소득 과세 시뮬레이션부터 ISA 스위칭, 부동산·동산 리밸런싱, 보험 다이어트 액수까지 한 번에 잠금 해제하세요.
+                        </p>
+                        <button type="button" class="tds-primary-btn" id="inlineUnlockBtn" style="max-width: 320px;">
+                            3,900원으로 4대 재산·절세 처방전 열기
+                        </button>
+                    </div>
+                </section>
+
+                <section class="tds-card hidden" id="receiptSuccessCard" style="border: 2px solid var(--toss-success);">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span style="font-size: 12px; font-weight: 700; color: var(--toss-success);">✔ 토스 인앱 결제 검증 완료</span>
+                            <h4 style="font-size: 15px; font-weight: 800; margin-top: 2px;">프라이빗 웰스·절세 리포트 영구 열람권</h4>
+                        </div>
+                        <button type="button" class="tds-chip selected" id="copyReportBtn" style="font-size: 12px; padding: 8px 12px;">
+                            📋 처방전 전체 복사
+                        </button>
+                    </div>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;" id="receiptMetaText"></p>
+                </section>
+
+            </div>
+
+        </main>
+
+        <!-- 5. 하단 고정 플로팅 CTA 바 + 홀로그래픽 쉬머 버튼 -->
+        <div class="sticky-bottom-bar">
+            <div class="floating-nudge-bubble" id="floatingNudgeBubble">
+                ⚡ 3초 만에 무료로 내 5대 자산 비중과 과세 안전도를 진단해 보세요!
+            </div>
+            <button type="button" class="tds-primary-btn" id="mainCtaBtn">
+                내 통합 재산 & 임대·금융소득 무료 진단하기
+            </button>
+        </div>
+
+        <!-- 6. 토스페이 원클릭 결제 바텀시트 모달 -->
+        <div class="modal-backdrop" id="paymentModalBackdrop">
+            <div class="tosspay-sheet">
+                <div class="sheet-handle"></div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div class="toss-logo-badge" style="width: 24px; height: 24px; font-size: 13px;">🏦</div>
+                        <span style="font-size: 18px; font-weight: 800;">토스페이 원클릭 결제</span>
+                    </div>
+                    <span class="security-pill">🔒 안심결제</span>
+                </div>
+                <p style="font-size: 13px; color: var(--text-secondary);">
+                    결제 즉시 블러(잠금)가 해제되며 5대 자산 리밸런싱 및 금융·임대소득 절세 처방전이 모두 공개돼요.
+                </p>
+
+                <div class="receipt-box">
+                    <div class="receipt-row">
+                        <span>상품명</span>
+                        <strong style="color: var(--text-primary);">웰스볼트 AI 통합 재산·절세 프리미엄 리포트</strong>
+                    </div>
+                    <div class="receipt-row">
+                        <span>판매자 식별자 (.env 동적 연동)</span>
+                        <span id="modalOwnerIdText">TOS****P3</span>
+                    </div>
+                    <div class="receipt-row">
+                        <span>정산 파트너스</span>
+                        <span id="modalUserIdentityText">이춘****스랩</span>
+                    </div>
+                    <div class="receipt-row total">
+                        <span>최종 결제 금액</span>
+                        <span style="color: var(--accent-primary);" id="modalFinalPriceText">3,900원</span>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 10px;">
+                    <button
+                        type="button"
+                        id="cancelPayModalBtn"
+                        style="padding: 16px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--input-bg); color: var(--text-secondary); font-weight: 700; font-size: 15px; cursor: pointer;"
+                    >
+                        닫기
+                    </button>
+                    <button type="button" class="tds-primary-btn" id="confirmTossPayBtn">
+                        3,900원 바로 결제하기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7. [신규 탑재] 💛 카카오페이 · 은행 · 증권사 마이데이터 자산내역 통합 불러오기 바텀시트 모달 -->
+        <div class="modal-backdrop" id="myDataModalBackdrop">
+            <div class="tosspay-sheet" style="max-height: 88vh; overflow-y: auto;">
+                <div class="sheet-handle"></div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 20px;">💛</span>
+                        <span style="font-size: 17px; font-weight: 800;">금융권 나의 자산내역 통합 불러오기</span>
+                    </div>
+                    <span class="security-pill">🔒 AES-256</span>
+                </div>
+                <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
+                    연동할 금융기관(카카오페이, 은행, 증권사, 보험사)을 선택하시면 계좌별 잔고와 이자·배당 소득, 보유 ETF를 한 번에 불러옵니다.
+                </p>
+
+                <!-- 전체 선택 / 기본 추천 선택 버튼 -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 12px; font-weight: 800;">🏦 연동할 금융기관 선택</span>
+                    <div style="display: flex; gap: 6px;">
+                        <button type="button" id="selectAllMyDataBtn" class="etf-select-btn" style="font-size: 11px; padding: 3px 8px;">
+                            전체 선택
+                        </button>
+                        <button type="button" id="resetDefaultMyDataBtn" class="etf-select-btn" style="font-size: 11px; padding: 3px 8px;">
+                            주요기관 기본선택
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 10대 금융기관 선택 그리드 -->
+                <div class="mydata-inst-grid" id="myDataInstGrid"></div>
+
+                <!-- 앱/엑셀 잔고 텍스트 직접 붙여넣기 입력창 (선택사항) -->
+                <div style="margin-top: 10px; margin-bottom: 14px;">
+                    <label class="form-label" for="myDataPasteTextarea" style="font-size: 11px;">
+                        <span>📋 추가 계좌 텍스트/엑셀 붙여넣기 (선택사항)</span>
+                        <span style="color: var(--hak-accent-blue);">자동 금액·분류 인식</span>
+                    </label>
+                    <textarea
+                        id="myDataPasteTextarea"
+                        class="tds-input"
+                        rows="2"
+                        style="font-size: 12px; resize: vertical;"
+                        placeholder="예: 우리은행 비상금 500만원&#10;토스증권 미국배당주 1200만원"
+                    ></textarea>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 10px;">
+                    <button
+                        type="button"
+                        id="closeMyDataModalBtn"
+                        style="padding: 15px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--input-bg); color: var(--text-secondary); font-weight: 700; font-size: 14px; cursor: pointer;"
+                    >
+                        닫기
+                    </button>
+                    <button type="button" class="mydata-trigger-btn" id="confirmMyDataSyncBtn" style="font-size: 14px;">
+                        💛 선택 금융권 자산 한 번에 불러오기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>

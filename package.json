@@ -1,0 +1,20 @@
+{
+  "name": "antigravity-toss-miniapp-factory",
+  "version": "1.0.0",
+  "description": "안티그래비티 멀티 에이전트 스쿼드(AGENT 0~7) 기반 자율형 토스 미니앱 유료화 팩토리",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "qa": "node scripts/qa-auditor.js",
+    "deploy": "node scripts/toss-deploy-agent.js"
+  },
+  "keywords": [
+    "toss-miniapp",
+    "tds",
+    "monetization",
+    "aes-256-gcm",
+    "antigravity"
+  ],
+  "author": "TOSS_PARTNER_CHUNHAK",
+  "license": "MIT"
+}

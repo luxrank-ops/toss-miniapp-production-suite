@@ -1,0 +1,13 @@
+{
+  "name": "toss-miniapp-app3-wealth-vault",
+  "version": "1.0.0",
+  "description": "안티그래비티 제3호 토스 유료 미니앱 - 웰스볼트 AI (은행·증권·부동산·동산·보험 통합 재산 & 임대/금융소득 절세 스캐너)",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "qa": "node scripts/qa-auditor.js",
+    "deploy": "node scripts/toss-deploy-agent.js"
+  },
+  "author": "TOSS_PARTNER_CHUNHAK_APP3",
+  "license": "MIT"
+}

@@ -1,0 +1,18 @@
+{
+  "platform": "Toss Mini-App Partner Console (Automated CLI Bridge v2.0)",
+  "uploadStatus": "SUCCESS",
+  "appSequence": "APP #2 (RefundRadar AI)",
+  "qaAuditScore": 100,
+  "bundleChecksum": "sha256:8280bba693f7",
+  "appId": "toss-miniapp-refundradar-8280bb",
+  "draftVersion": "v1.0.0-rc.1",
+  "appTitle": "환급레이더 AI : 숨은 병원비·건보료·통신비 환급금 & 고정지출 누수 스캐너",
+  "webviewEndpoint": "http://localhost:3001",
+  "dynamicEnvironmentBinding": {
+    "configuredPriceKRW": 2900,
+    "maskedOwnerId": "TOS****P2",
+    "maskedUserIdentity": "이춘학****크랩",
+    "encryptionStandard": "AES-256-GCM"
+  },
+  "deployedAt": "2026-10-18T14:21:22.869Z"
+}

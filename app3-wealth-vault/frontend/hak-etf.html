@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>HAK ETF 관리 - 삼성자산운용 KODEX 월배당·비교·절세 미니앱 (+ 금융권 자산 불러오기)</title>
+    <link rel="stylesheet" href="/styles/tds-wealth.css" />
+    <link rel="stylesheet" href="/styles/hak-etf.css" />
+</head>
+<body>
+    <!-- 상단 플로팅 알림 토스트 -->
+    <div class="tds-toast" id="tdsToast">알림 메시지</div>
+
+    <div class="toss-webview-shell">
+
+        <!-- 1. 상단 리퀴드 글래스 헤더 (개인재정 앱 복귀 버튼 + AES-256 배지 + 다크모드 스위치) -->
+        <header class="toss-header">
+            <div class="toss-header-left">
+                <div class="toss-logo-badge" style="background: linear-gradient(135deg, #1428A0, #2563EB);">📈</div>
+                <span class="toss-header-title" id="headerAppTitle">HAK ETF 관리</span>
+            </div>
+            <div class="header-right-actions">
+                <a href="/index.html" class="back-to-wealth-btn" title="개인재정 관리 앱(웰스볼트 AI)으로 돌아가기">
+                    🏦 개인재정 앱
+                </a>
+                <div class="security-pill" title="개인 ETF·배당 데이터 AES-256-GCM 암호화 적용">
+                    🔒 AES-256
+                </div>
+                <button
+                    type="button"
+                    class="theme-toggle-btn"
+                    id="themeToggleBtn"
+                    title="크리스탈 라이트 / 스페이셜 다크 글래스 모드 전환"
+                >
+                    🌙
+                </button>
+            </div>
+        </header>
+
+        <!-- 2. 실시간 다이내믹 아일랜드 캡슐 -->
+        <div class="dynamic-island-wrap">
+            <div class="dynamic-island-pill" id="dynamicIslandPill" title="터치하여 HAK ETF 관리 엔진 상태 보기">
+                <div class="dynamic-island-top">
+                    <div class="island-left">
+                        <span class="ticker-live-dot"></span>
+                        <span class="ticker-message" id="socialTickerText">
+                            삼성 KODEX 월배당·AI반도체·미국대표지수 8대 핵심 ETF & 2,000만 원 절세 엔진 가동 중
+                        </span>
+                    </div>
+                    <span class="island-expand-hint" id="islandHintText">터치 ▼</span>
+                </div>
+                <div class="dynamic-island-expanded">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span>📊 개인재정·마이데이터 연동: <strong style="color: #00E682;" id="syncStatusText">실시간 동기화됨</strong></span>
+                        <span>🔐 AES-256-GCM 암호화</span>
+                    </div>
+                    <div>
+                        카카오페이증권 · 삼성증권(ISA) · 미래에셋 · 키움 · 신협 자산 및 보유 ETF 자동 연동
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 상단 3대 핵심 기능 전환 탭 -->
+        <nav class="loop-switcher-bar" aria-label="HAK ETF 관리 핵심 기능 전환">
+            <div class="segmented-track">
+                <button type="button" class="loop-tab-btn active" data-tab="TAB_DIVIDEND">
+                    💰 월배당·절세 계산기
+                </button>
+                <button type="button" class="loop-tab-btn" data-tab="TAB_FINDER">
+                    🔍 ETF 탐색·랭킹
+                </button>
+                <button type="button" class="loop-tab-btn" data-tab="TAB_COMPARE">
+                    ⚖️ ETF 비교·PDF
+                </button>
+            </div>
+        </nav>
+
+        <!-- 4. 메인 컨텐츠 영역 -->
+        <main class="toss-main">
+
+            <!-- 상단 히어로 요약 벤토 그리드 -->
+            <section class="bento-dashboard-grid" aria-label="HAK ETF 관리 핵심 요약">
+                <div class="bento-tile-wide">
+                    <div class="hero-top-row">
+                        <span class="hero-badge">SAMSUNG KODEX × HAK ETF 관리 에디션</span>
+                        <span class="diff-trend-tag" id="selectedCountBadge">선택 ETF 3종목</span>
+                    </div>
+                    <h1 class="hero-title">
+                        매월 따박따박 받는 ETF 배당,<br />2,000만 원 세금 걱정 없이 설계하세요
+                    </h1>
+                    <p class="hero-subtitle">
+                        삼성자산운용 KODEX 핵심 ETF 탐색부터 구성종목(PDF) 비중, 1~12월 월배당 캘린더, 카카오페이·은행·증권사 자산 및 2,000만 원 절세 연동까지 한 번에 관리해요.
+                    </p>
+                </div>
+
+                <div class="bento-tile-half">
+                    <span class="bento-tile-label">🏦 연동된 내 증권자산</span>
+                    <div class="bento-tile-value" id="heroExistingStockText">8,500만 원</div>
+                    <span class="bento-tile-sub">금융권·개인재정 연동</span>
+                </div>
+
+                <div class="bento-tile-half">
+                    <span class="bento-tile-label">💵 연동된 기존 금융소득</span>
+                    <div class="bento-tile-value" style="color: var(--accent-primary);" id="heroExistingFinIncomeText">연 1,650만 원</div>
+                    <span class="bento-tile-sub">종합과세 기준 2,000만 원</span>
+                </div>
+            </section>
+
+            <!-- =================================================================== -->
+            <!-- [탭 1] 💰 월배당 포트폴리오 계산기 & 배당 캘린더 & 개인재정 절세 연동 -->
+            <!-- =================================================================== -->
+            <div id="tabDividendSection" style="display: flex; flex-direction: column; gap: 14px;">
+
+                <!-- 1-1. 시뮬레이션 조건 입력 카드 (+ 금융권 자산 & 보유 ETF 원클릭 불러오기) -->
+                <section class="tds-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h2 style="font-size: 16px; font-weight: 800;">🎯 월배당 목표 & 금융권 내 자산 연동</h2>
+                        <span style="font-size: 11px; color: var(--toss-success); font-weight: 800;">🔒 AES-256 암호화</span>
+                    </div>
+
+                    <!-- [신규 탑재] HAK ETF 관리 내 금융권(카카오페이·증권사·은행) 자산 & 보유 ETF 즉시 불러오기 박스 -->
+                    <div class="mydata-import-box">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-size: 12px; font-weight: 800;">💛 카카오페이증권 · 삼성 · 미래에셋 · 신협 연동</span>
+                            <span style="font-size: 10px; font-weight: 800; color: var(--hak-accent-blue);" id="hakMyDataStatusText">
+                                원클릭 자동 입력 지원
+                            </span>
+                        </div>
+                        <button type="button" class="mydata-trigger-btn" id="hakQuickMyDataFetchBtn">
+                            💛 카카오페이 · 은행 · 증권사 내 자산 & 보유 ETF 불러오기
+                        </button>
+                        <div class="synced-accounts-panel hidden" id="hakSyncedAccountsBox" style="margin-top: 10px; font-size: 11px;"></div>
+                    </div>
+
+                    <div class="form-row-2 form-group">
+                        <div>
+                            <label class="form-label" for="hakUserNameInput">이름 / 호칭</label>
+                            <input type="text" id="hakUserNameInput" class="tds-input" value="이춘학" />
+                        </div>
+                        <div>
+                            <label class="form-label" for="hakHealthTypeSelect">건강보험 자격</label>
+                            <select id="hakHealthTypeSelect" class="tds-select">
+                                <option value="직장가입자" selected>직장가입자</option>
+                                <option value="지역가입자">지역가입자</option>
+                                <option value="피부양자(은퇴·주부)">피부양자 (은퇴·주부)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- 계산 방식 선택 (목표 월배당금 기준 vs 투자원금 기준) -->
+                    <div class="form-group">
+                        <label class="form-label">시뮬레이션 계산 기준 선택</label>
+                        <div class="chip-group" id="calcModeChipGroup">
+                            <button type="button" class="tds-chip selected" data-calcmode="TARGET_DIVIDEND">
+                                💰 매월 받고 싶은 목표 배당금 기준
+                            </button>
+                            <button type="button" class="tds-chip" data-calcmode="INVEST_AMOUNT">
+                                💵 내가 투자할 ETF 원금 기준
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-row-2 form-group">
+                        <div id="targetDivInputWrap">
+                            <label class="form-label" for="targetMonthlyDivInput">
+                                <span>🎯 희망 월배당금</span>
+                                <span>단위: 만 원/월</span>
+                            </label>
+                            <input type="number" id="targetMonthlyDivInput" class="tds-input" value="100" min="1" />
+                        </div>
+                        <div id="investAmountInputWrap">
+                            <label class="form-label" for="investAmountInput">
+                                <span>💰 또는 희망 투자원금</span>
+                                <span>단위: 만 원</span>
+                            </label>
+                            <input type="number" id="investAmountInput" class="tds-input" value="10000" min="100" />
+                        </div>
+                    </div>
+
+                    <div class="form-row-2 form-group">
+                        <div>
+                            <label class="form-label" for="existingStockInput">
+                                <span>📈 기존 증권자산 (연동)</span>
+                                <span>만 원</span>
+                            </label>
+                            <input type="number" id="existingStockInput" class="tds-input" value="8500" min="0" />
+                        </div>
+                        <div>
+                            <label class="form-label" for="existingFinIncomeInput">
+                                <span>💵 기존 연 금융소득 (연동)</span>
+                                <span>만 원/년</span>
+                            </label>
+                            <input type="number" id="existingFinIncomeInput" class="tds-input" value="1650" min="0" />
+                        </div>
+                    </div>
+
+                    <button type="button" class="tds-primary-btn" id="runSimulationBtn" style="margin-top: 6px;">
+                        ⚡ 선택된 ETF로 월배당 캘린더 & 2,000만 원 절세 계산하기
+                    </button>
+                </section>
+
+                <!-- 1-2. 월배당 시뮬레이션 핵심 요약 & 12개월 배당 캘린더 카드 -->
+                <section class="tds-card" id="simulationResultCard">
+                    <span class="hero-badge" style="margin-bottom: 6px;">HAK ETF 관리 시뮬레이션 완료</span>
+                    <div class="networth-hero-box" style="margin-top: 8px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 12px; color: #CBD5E1; font-weight: 600;" id="simRequiredLabel">
+                                목표 달성에 필요한 ETF 투자원금
+                            </span>
+                            <span style="font-size: 12px; color: #38BDF8; font-weight: 700;" id="simAvgYieldBadge">
+                                평균 연 분배율 10.97%
+                            </span>
+                        </div>
+                        <div class="networth-big-text" id="simRequiredInvestText">1억 939만 원</div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; color: #E2E8F0; margin-top: 6px;">
+                            <span>예상 월평균 분배금: <strong style="color: #00E682;" id="simMonthlyDivText">100만 원</strong></span>
+                            <span>예상 연간 총분배금: <strong style="color: #FBBF24;" id="simAnnualDivText">1,200만 원</strong></span>
+                        </div>
+                    </div>
+
+                    <!-- 포트폴리오 구성 종목 요약 -->
+                    <div style="margin-top: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-size: 13px; font-weight: 800;">📌 현재 포트폴리오에 담긴 ETF (동일 비중)</span>
+                            <button type="button" class="etf-select-btn" id="goToFinderBtn" style="font-size: 11px; padding: 4px 8px;">
+                                + 종목 변경하기
+                            </button>
+                        </div>
+                        <div id="simSelectedEtfsList" style="display: flex; flex-direction: column; gap: 6px;"></div>
+                    </div>
+
+                    <!-- 1월 ~ 12월 월별 배당 캘린더 -->
+                    <div style="margin-top: 16px;">
+                        <h3 style="font-size: 14px; font-weight: 800;">🗓️ 1월 ~ 12월 월별 예상 분배금 캘린더 (세전 / ISA 실수령)</h3>
+                        <div class="dividend-calendar-grid" id="dividendCalendarGrid"></div>
+                    </div>
+                </section>
+
+                <!-- 1-3. 개인재정 앱(웰스볼트 AI) 금융소득 2,000만 원 & 중개형 ISA 절세 연동 카드 -->
+                <section class="tds-card" style="border: 2px solid var(--hak-accent-blue);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span class="hero-badge" style="margin-bottom: 0;">🏦 개인재정 앱(웰스볼트 AI) 절세·건보료 자동 연동</span>
+                        <span style="font-size: 12px; font-weight: 800; color: var(--toss-success);" id="isaTaxSaveBadge">
+                            ISA 절세 연 +185만 원
+                        </span>
+                    </div>
+
+                    <h3 style="font-size: 15px; font-weight: 800; margin-bottom: 6px;" id="taxWarningTitleText">
+                        🟢 금융소득종합과세(2,000만 원) 안전 구간입니다
+                    </h3>
+
+                    <!-- 2,000만 원 대비 합산 금융소득 게이지 -->
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 700;">
+                        <span>합산 과세 금융소득: <strong id="combinedFinIncomeText">1,950만 원</strong></span>
+                        <span>종합과세 기준: <strong>2,000만 원</strong></span>
+                    </div>
+                    <div class="tax-gauge-track">
+                        <div class="tax-gauge-fill" id="taxGaugeFill" style="width: 80%; background: var(--toss-success);"></div>
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 10px;" id="taxFreeOptionNoticeText">
+                        💡 비과세 옵션 프리미엄 배당분은 금융소득 합산에서 자동 제외되었습니다.
+                    </div>
+
+                    <p style="font-size: 13px; color: var(--text-primary); line-height: 1.55; background: var(--input-bg); padding: 12px; border-radius: 14px;" id="taxAdviceDetailText"></p>
+
+                    <div style="margin-top: 10px; font-size: 11px; color: var(--text-muted); word-break: break-all;">
+                        🔐 <strong>암호화 증적(AES-256-GCM):</strong> <span id="hakCryptoAuditText"></span>
+                    </div>
+
+                    <!-- 개인재정 앱(웰스볼트 AI)으로 원클릭 데이터 전송 버튼 -->
+                    <button
+                        type="button"
+                        class="tds-primary-btn"
+                        id="applyToWealthVaultBtn"
+                        style="margin-top: 14px; background: linear-gradient(135deg, #059669, #10B981);"
+                    >
+                        🏦 이 ETF 투자금·배당금을 내 개인재정 앱(웰스볼트 AI)에 즉시 반영하기
+                    </button>
+                </section>
+
+            </div>
+
+            <!-- =================================================================== -->
+            <!-- [탭 2] 🔍 KODEX / 주요 ETF 테마별 탐색 및 수익률·총보수·분배율 랭킹 -->
+            <!-- =================================================================== -->
+            <div class="hidden" id="tabFinderSection" style="display: flex; flex-direction: column; gap: 14px;">
+
+                <section class="tds-card">
+                    <h2 style="font-size: 16px; font-weight: 800; margin-bottom: 10px;">
+                        🔍 삼성 KODEX 핵심 ETF 테마 탐색 & 랭킹
+                    </h2>
+
+                    <div class="form-group" style="margin-bottom: 10px;">
+                        <input
+                            type="text"
+                            id="etfSearchKeywordInput"
+                            class="tds-input"
+                            placeholder="종목명, 종목코드, 구성종목(예: 엔비디아, SK하이닉스, 리츠) 검색..."
+                        />
+                    </div>
+
+                    <div class="chip-group" id="etfCategoryChipGroup" style="margin-bottom: 10px;">
+                        <button type="button" class="tds-chip selected" data-category="ALL">전체 (8)</button>
+                        <button type="button" class="tds-chip" data-category="MONTHLY_DIV">💰 월배당·커버드콜</button>
+                        <button type="button" class="tds-chip" data-category="AI_SEMI">🤖 AI·반도체</button>
+                        <button type="button" class="tds-chip" data-category="US_INDEX">🇺🇸 미국대표지수</button>
+                        <button type="button" class="tds-chip" data-category="PENSION_ISA">🛡️ 연금·ISA</button>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 12px; color: var(--text-secondary); font-weight: 700;">
+                            💡 카드에서 <strong>[+ 담기]</strong>를 누르면 계산기와 비교함에 반영돼요!
+                        </span>
+                        <select id="etfSortSelect" class="tds-select" style="width: auto; padding: 6px 10px; font-size: 12px;">
+                            <option value="dividend_desc">연 분배율(배당률) 높은 순</option>
+                            <option value="return_desc">최근 1년 수익률 높은 순</option>
+                            <option value="fee_asc">총보수(수수료) 낮은 순</option>
+                            <option value="aum_desc">순자산(AUM) 큰 순</option>
+                        </select>
+                    </div>
+                </section>
+
+                <div class="etf-card-list" id="etfCatalogContainer"></div>
+
+            </div>
+
+            <!-- =================================================================== -->
+            <!-- [탭 3] ⚖️ ETF 1:1 / 다중 비교 분석 및 구성종목(PDF) 비중 확인 -->
+            <!-- =================================================================== -->
+            <div class="hidden" id="tabCompareSection" style="display: flex; flex-direction: column; gap: 14px;">
+
+                <section class="tds-card">
+                    <h2 style="font-size: 16px; font-weight: 800; margin-bottom: 6px;">
+                        ⚖️ 선택한 ETF 1:1 / 다중 핵심 지표 비교
+                    </h2>
+                    <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
+                        1억 원(10,000만 원)을 투자했을 때의 예상 월배당금, 연간 보수 비용, 과세 혜택을 한눈에 비교합니다.
+                    </p>
+
+                    <div id="compareHighlightsBox" style="display: flex; flex-direction: column; gap: 6px; background: var(--input-bg); padding: 12px; border-radius: 14px; font-size: 12px; font-weight: 700;"></div>
+
+                    <div class="compare-table-wrap">
+                        <table class="compare-table" id="compareTable"></table>
+                    </div>
+                </section>
+
+                <section class="tds-card">
+                    <h3 style="font-size: 15px; font-weight: 800; margin-bottom: 6px;">
+                        📂 선택 ETF별 구성종목(PDF) 상위 5개 비중 비교
+                    </h3>
+                    <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
+                        내가 투자한 ETF 안에 어떤 글로벌·국내 우량주들이 몇 %씩 들어 있는지 투명하게 확인하세요.
+                    </p>
+                    <div id="comparePdfListContainer" style="display: flex; flex-direction: column; gap: 14px;"></div>
+                </section>
+
+            </div>
+
+        </main>
+
+        <!-- 5. 하단 고정 플로팅 액션 바 -->
+        <div class="sticky-bottom-bar">
+            <div class="floating-nudge-bubble" id="hakBottomNudge">
+                📊 선택된 ETF 포트폴리오를 내 개인재정 앱(웰스볼트 AI)과 실시간 연동해 보세요!
+            </div>
+            <button type="button" class="tds-primary-btn" id="bottomSyncToWealthBtn">
+                🏦 개인재정 앱(웰스볼트 AI)으로 배당·자산 반영 후 이동하기
+            </button>
+        </div>
+
+    </div>
+
+    <script src="/js/hak-etf.js"></script>
+</body>
+</html>

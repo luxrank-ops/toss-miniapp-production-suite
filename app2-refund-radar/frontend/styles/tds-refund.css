@@ -1,0 +1,816 @@
+/**
+ * ============================================================================
+ * 파일명: app2-refund-radar/frontend/styles/tds-refund.css
+ * 역할: [제2호 앱 AGENT 2-DIFF & AGENT 5] 구글 플레이(Material Expressive) × 아이폰(Dynamic Island,
+ *       Bento Grid, Spatial Liquid Glass, Holographic Shimmer, Dark Mode) 차별화 스타일시트
+ * ============================================================================
+ */
+
+:root {
+    --accent-primary: #00C471;
+    --accent-secondary: #3182F6;
+    --accent-glow: rgba(0, 196, 113, 0.28);
+
+    --bg-outer: #CBD5E1;
+    --bg-shell: #EDF4F2;
+    --aurora-1: rgba(0, 196, 113, 0.22);
+    --aurora-2: rgba(49, 130, 246, 0.18);
+    --aurora-3: rgba(16, 185, 129, 0.16);
+    --glass-surface: rgba(255, 255, 255, 0.80);
+    --glass-border: rgba(255, 255, 255, 0.88);
+    --glass-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.06);
+    --input-bg: rgba(241, 245, 249, 0.88);
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #94A3B8;
+    --border-subtle: rgba(148, 163, 184, 0.24);
+
+    --toss-emerald: #00C471;
+    --toss-emerald-bg: rgba(0, 196, 113, 0.14);
+    --toss-danger: #F04452;
+    --toss-danger-bg: rgba(240, 68, 82, 0.14);
+    --radius-card: 26px;
+    --radius-btn: 18px;
+}
+
+[data-theme="dark"] {
+    --bg-outer: #020617;
+    --bg-shell: #071114;
+    --aurora-1: rgba(0, 196, 113, 0.26);
+    --aurora-2: rgba(49, 130, 246, 0.24);
+    --aurora-3: rgba(14, 165, 233, 0.20);
+    --glass-surface: rgba(15, 23, 42, 0.74);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-shadow: 0 14px 36px -5px rgba(0, 0, 0, 0.45);
+    --input-bg: rgba(30, 41, 59, 0.85);
+    --text-primary: #F8FAFC;
+    --text-secondary: #CBD5E1;
+    --text-muted: #64748B;
+    --border-subtle: rgba(255, 255, 255, 0.1);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+    background-color: var(--bg-outer);
+    color: var(--text-primary);
+    line-height: 1.5;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+    transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+.toss-webview-shell {
+    width: 100%;
+    max-width: 480px;
+    min-height: 100vh;
+    background-color: var(--bg-shell);
+    background-image:
+        radial-gradient(at 15% 10%, var(--aurora-1) 0px, transparent 55%),
+        radial-gradient(at 88% 28%, var(--aurora-2) 0px, transparent 55%),
+        radial-gradient(at 50% 88%, var(--aurora-3) 0px, transparent 60%);
+    position: relative;
+    padding-bottom: 140px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+    overflow-x: hidden;
+    transition: background-color 0.35s ease;
+}
+
+.tds-toast {
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    transform: translate(-50%, -140%);
+    background: rgba(15, 23, 42, 0.95);
+    color: #FFFFFF;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(16px);
+    padding: 12px 22px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    z-index: 250;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    white-space: nowrap;
+}
+
+.tds-toast.show {
+    transform: translate(-50%, 0);
+}
+
+.toss-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--glass-surface);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.toss-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.toss-logo-badge {
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    color: #FFFFFF;
+    font-weight: 800;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px var(--accent-glow);
+}
+
+.toss-header-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.header-right-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.security-pill {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--toss-emerald);
+    background: var(--toss-emerald-bg);
+    padding: 5px 10px;
+    border-radius: 999px;
+}
+
+.theme-toggle-btn {
+    border: 1px solid var(--border-subtle);
+    background: var(--glass-surface);
+    color: var(--text-primary);
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    font-size: 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* [차별화 #1] iOS Dynamic Island Live Activity Capsule */
+.dynamic-island-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 10px 16px 4px;
+}
+
+.dynamic-island-pill {
+    background: #090D16;
+    color: #FFFFFF;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 28px;
+    padding: 8px 16px;
+    width: 94%;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+    cursor: pointer;
+    transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    overflow: hidden;
+}
+
+.dynamic-island-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.island-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+}
+
+.ticker-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #00E682;
+    box-shadow: 0 0 10px #00E682;
+    flex-shrink: 0;
+    animation: pulseDot 1.4s infinite;
+}
+
+@keyframes pulseDot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+.ticker-message {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: opacity 0.25s ease;
+}
+
+.island-expand-hint {
+    font-size: 10px;
+    color: #94A3B8;
+    flex-shrink: 0;
+}
+
+.dynamic-island-expanded {
+    max-height: 0;
+    opacity: 0;
+    margin-top: 0;
+    transition: all 0.3s ease;
+    font-size: 11px;
+    color: #CBD5E1;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dynamic-island-pill.expanded {
+    padding: 12px 18px;
+    border-radius: 22px;
+}
+
+.dynamic-island-pill.expanded .dynamic-island-expanded {
+    max-height: 90px;
+    opacity: 1;
+    margin-top: 10px;
+    padding-top: 8px;
+}
+
+.loop-switcher-bar {
+    padding: 8px 16px;
+}
+
+.segmented-track {
+    background: var(--glass-surface);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    padding: 4px;
+    border-radius: 16px;
+    display: flex;
+    gap: 4px;
+    box-shadow: var(--glass-shadow);
+}
+
+.loop-tab-btn {
+    flex: 1;
+    white-space: nowrap;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 9px 8px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.loop-tab-btn.active {
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    color: #FFFFFF;
+    font-weight: 800;
+    box-shadow: 0 4px 12px var(--accent-glow);
+}
+
+.funnel-steps-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--glass-surface);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    padding: 11px 16px;
+    border-radius: 18px;
+    box-shadow: var(--glass-shadow);
+}
+
+.funnel-step-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.funnel-step-item.active {
+    color: var(--accent-primary);
+    font-weight: 800;
+}
+
+.funnel-step-item.done {
+    color: var(--toss-emerald);
+    font-weight: 700;
+}
+
+.step-num-circle {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--input-bg);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.funnel-step-item.active .step-num-circle {
+    background: var(--accent-primary);
+    color: #FFFFFF;
+}
+
+.funnel-step-item.done .step-num-circle {
+    background: var(--toss-emerald);
+    color: #FFFFFF;
+}
+
+.toss-main {
+    padding: 8px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.tds-card {
+    background: var(--glass-surface);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-card);
+    padding: 20px;
+    box-shadow: var(--glass-shadow);
+}
+
+/* [차별화 #2] Apple Bento Grid */
+.bento-dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.bento-tile-wide {
+    grid-column: span 2;
+    background: var(--glass-surface);
+    backdrop-filter: blur(22px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-card);
+    padding: 20px;
+    box-shadow: var(--glass-shadow);
+}
+
+.bento-tile-half {
+    background: var(--glass-surface);
+    backdrop-filter: blur(22px);
+    border: 1px solid var(--glass-border);
+    border-radius: 22px;
+    padding: 15px 16px;
+    box-shadow: var(--glass-shadow);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.bento-tile-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.bento-tile-value {
+    font-size: 17px;
+    font-weight: 800;
+    color: var(--accent-primary);
+}
+
+.bento-tile-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.hero-top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.hero-badge {
+    display: inline-block;
+    background: var(--toss-emerald-bg);
+    color: var(--toss-emerald);
+    font-size: 11px;
+    font-weight: 800;
+    padding: 5px 11px;
+    border-radius: 999px;
+}
+
+.diff-trend-tag {
+    font-size: 11px;
+    font-weight: 800;
+    color: #FFFFFF;
+    background: linear-gradient(135deg, #00C471 0%, #3182F6 100%);
+    padding: 4px 10px;
+    border-radius: 999px;
+}
+
+.hero-title {
+    font-size: 21px;
+    font-weight: 800;
+    color: var(--text-primary);
+    letter-spacing: -0.4px;
+    line-height: 1.35;
+    margin-bottom: 6px;
+}
+
+.hero-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.env-status-banner {
+    margin-top: 12px;
+    background: var(--input-bg);
+    border: 1px dashed var(--border-subtle);
+    border-radius: 14px;
+    padding: 8px 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.env-status-banner strong {
+    color: var(--accent-primary);
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group:last-child {
+    margin-bottom: 0;
+}
+
+.form-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.tds-input,
+.tds-select {
+    width: 100%;
+    padding: 13px 15px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    background: var(--input-bg);
+    border: 1.5px solid var(--border-subtle);
+    border-radius: 14px;
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.tds-input:focus,
+.tds-select:focus {
+    border-color: var(--accent-primary);
+}
+
+.form-row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+/* [차별화 #4] Google Material 3 Expressive Shape-Morphing Chips */
+.chip-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tds-chip {
+    border: 1px solid var(--border-subtle);
+    background: var(--input-bg);
+    color: var(--text-secondary);
+    padding: 10px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.tds-chip.selected {
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    color: #FFFFFF;
+    border-color: transparent;
+    border-radius: 14px;
+    transform: scale(1.03);
+    box-shadow: 0 6px 16px var(--accent-glow);
+}
+
+.loading-container {
+    text-align: center;
+    padding: 36px 20px;
+}
+
+.radar-pulse {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+    color: #FFFFFF;
+    font-size: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 18px;
+    box-shadow: 0 0 0 0 rgba(0, 196, 113, 0.6);
+    animation: radarPulseAnim 1.2s infinite;
+}
+
+@keyframes radarPulseAnim {
+    0% { box-shadow: 0 0 0 0 rgba(0, 196, 113, 0.6); }
+    70% { box-shadow: 0 0 0 20px rgba(0, 196, 113, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 196, 113, 0); }
+}
+
+.refund-amount-hero {
+    background: linear-gradient(135deg, #090D16 0%, #1E293B 100%);
+    color: #FFFFFF;
+    border-radius: 20px;
+    padding: 20px;
+    margin: 12px 0 16px;
+    text-align: center;
+}
+
+.refund-big-number {
+    font-size: 34px;
+    font-weight: 800;
+    color: #00E682;
+    font-variant-numeric: tabular-nums;
+    margin-top: 4px;
+}
+
+.progress-track {
+    width: 100%;
+    height: 10px;
+    background: var(--input-bg);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+    border-radius: 999px;
+    transition: width 0.8s ease;
+}
+
+.paywall-wrapper {
+    position: relative;
+    overflow: hidden;
+    border: 1.5px solid var(--glass-border);
+}
+
+.blurred-content {
+    filter: blur(7px);
+    user-select: none;
+    pointer-events: none;
+    transition: filter 0.5s ease;
+}
+
+.blurred-content.unlocked {
+    filter: blur(0);
+    user-select: auto;
+    pointer-events: auto;
+}
+
+.paywall-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.35) 0%, rgba(9, 13, 22, 0.96) 50%);
+    color: #FFFFFF;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 26px 22px;
+    text-align: center;
+    z-index: 10;
+}
+
+.lock-circle {
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #00E682 0%, #3182F6 100%);
+    color: #090D16;
+    font-size: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px;
+    box-shadow: 0 8px 24px rgba(0, 230, 130, 0.35);
+}
+
+.refund-item-card {
+    background: var(--input-bg);
+    border-left: 4px solid var(--accent-primary);
+    border-radius: 16px;
+    padding: 15px;
+    margin-bottom: 12px;
+}
+
+.refund-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.refund-item-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.refund-item-amount {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--toss-emerald);
+}
+
+.sticky-bottom-bar {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    max-width: 480px;
+    background: linear-gradient(180deg, transparent 0%, var(--bg-shell) 35%);
+    padding: 12px 20px 20px;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.floating-nudge-bubble {
+    background: #0F172A;
+    color: #00E682;
+    border: 1px solid rgba(0, 230, 130, 0.35);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 999px;
+    margin-bottom: 8px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+    animation: nudgeBounce 1.8s ease-in-out infinite;
+}
+
+@keyframes nudgeBounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+}
+
+.tds-primary-btn {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    padding: 17px 20px;
+    border: none;
+    border-radius: var(--radius-btn);
+    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+    color: #FFFFFF;
+    font-size: 16px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 10px 24px var(--accent-glow);
+    transition: transform 0.15s ease;
+}
+
+.tds-primary-btn::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -120%;
+    width: 65%;
+    height: 100%;
+    background: linear-gradient(
+        115deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.36) 50%,
+        transparent 100%
+    );
+    animation: holographicSweep 3.2s infinite;
+}
+
+@keyframes holographicSweep {
+    0% { left: -120%; }
+    55%, 100% { left: 160%; }
+}
+
+.tds-primary-btn:active {
+    transform: scale(0.97);
+}
+
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.65);
+    backdrop-filter: blur(6px);
+    display: none;
+    justify-content: center;
+    align-items: flex-end;
+    z-index: 100;
+}
+
+.modal-backdrop.open {
+    display: flex;
+}
+
+.tosspay-sheet {
+    width: 100%;
+    max-width: 480px;
+    background: var(--bg-shell);
+    color: var(--text-primary);
+    border-top: 1px solid var(--glass-border);
+    border-radius: 28px 28px 0 0;
+    padding: 24px 22px 30px;
+    animation: slideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+.sheet-handle {
+    width: 42px;
+    height: 5px;
+    background: var(--text-muted);
+    border-radius: 999px;
+    margin: 0 auto 18px;
+}
+
+.receipt-box {
+    background: var(--input-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 16px;
+    padding: 16px;
+    margin: 16px 0;
+}
+
+.receipt-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    margin-bottom: 10px;
+    color: var(--text-secondary);
+}
+
+.receipt-row.total {
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 12px;
+    margin-bottom: 0;
+    font-size: 17px;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.hidden {
+    display: none !important;
+}

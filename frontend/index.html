@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>머니사주 AI - 토스 미니앱 (iOS Spatial × Google Expressive 에디션)</title>
+    <link rel="stylesheet" href="/styles/tds-theme.css" />
+</head>
+<body>
+    <!-- TDS 상단 플로팅 토스트 알림 -->
+    <div class="tds-toast" id="tdsToast">알림 메시지</div>
+
+    <!-- 모바일 인앱 브라우저 컨테이너 + 오로라 메쉬 배경 -->
+    <div class="toss-webview-shell">
+        
+        <!-- 1. 상단 리퀴드 글래스 헤더 + [차별화 #6] 라이트/다크 글래스 모드 스위치 -->
+        <header class="toss-header">
+            <div class="toss-header-left">
+                <div class="toss-logo-badge">T</div>
+                <span class="toss-header-title" id="headerAppTitle">머니사주 AI</span>
+            </div>
+            <div class="header-right-actions">
+                <div class="security-pill" title="개인정보 AES-256-GCM 암호화 보호 적용됨">
+                    🔒 AES-256
+                </div>
+                <button
+                    type="button"
+                    class="theme-toggle-btn"
+                    id="themeToggleBtn"
+                    title="크리스탈 라이트 / 스페이셜 다크 글래스 모드 전환"
+                >
+                    🌙
+                </button>
+            </div>
+        </header>
+
+        <!-- 2. [차별화 #1] iOS Dynamic Island Live Activity Capsule (터치 시 확장되는 플로팅 캡슐) -->
+        <div class="dynamic-island-wrap">
+            <div class="dynamic-island-pill" id="dynamicIslandPill" title="터치하여 실시간 보안·통계 확장 보기">
+                <div class="dynamic-island-top">
+                    <div class="island-left">
+                        <span class="ticker-live-dot"></span>
+                        <span class="ticker-message" id="socialTickerText">
+                            방금 서울 마포구 김*현님이 이번 달 손재수 주의보 3일을 확인했어요
+                        </span>
+                    </div>
+                    <span class="island-expand-hint" id="islandHintText">터치 ▼</span>
+                </div>
+                <div class="dynamic-island-expanded">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span>⚡ 실시간 AI 오행 엔진 가동률: <strong style="color: #00E682;">99.9%</strong></span>
+                        <span>🔐 AES-256-GCM 무결성 검증됨</span>
+                    </div>
+                    <div>
+                        🍎 iOS Spatial Glass & 🤖 Google Material Expressive 하이브리드 UI 적용됨
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 세그먼트 컨트롤 탭 -->
+        <nav class="loop-switcher-bar" aria-label="세대별 미니앱 전환">
+            <div class="segmented-track">
+                <button type="button" class="loop-tab-btn active" data-category="MZ_SAJU">
+                    MZ 머니사주
+                </button>
+                <button type="button" class="loop-tab-btn" data-category="SENIOR_HEALTH">
+                    시니어 건강·지원금
+                </button>
+                <button type="button" class="loop-tab-btn" data-category="ALPHA_FEEL">
+                    잘파 필코노미
+                </button>
+            </div>
+        </nav>
+
+        <!-- 4. 메인 컨텐츠 영역 -->
+        <main class="toss-main">
+
+            <!-- 3단계 퍼널 스텝 인디케이터 -->
+            <div class="funnel-steps-bar">
+                <div class="funnel-step-item active" id="funnelStep1">
+                    <span class="step-num-circle">1</span>
+                    <span>정보 입력</span>
+                </div>
+                <span style="color: var(--text-muted); font-size: 12px;">➔</span>
+                <div class="funnel-step-item" id="funnelStep2">
+                    <span class="step-num-circle">2</span>
+                    <span>무료 오행 진단</span>
+                </div>
+                <span style="color: var(--text-muted); font-size: 12px;">➔</span>
+                <div class="funnel-step-item" id="funnelStep3">
+                    <span class="step-num-circle">3</span>
+                    <span>머니캘린더 해제</span>
+                </div>
+            </div>
+
+            <!-- [차별화 #2] Apple Bento Grid (비대칭 2열 모듈형 대시보드 레이아웃) -->
+            <section class="bento-dashboard-grid" aria-label="벤토 그리드 핵심 요약">
+                <!-- 상단 2칸 와이드 히어로 타일 -->
+                <div class="bento-tile-wide">
+                    <div class="hero-top-row">
+                        <span class="hero-badge" id="heroGenerationBadge">2030 MZ세대 인기 1위 금융·사주</span>
+                        <span class="diff-trend-tag">💎 iOS·Google 차별화 UI</span>
+                    </div>
+                    <h1 class="hero-title" id="heroMainTitle">
+                        이번 달 내 돈 새는 날,<br />언제인지 미리 피하세요
+                    </h1>
+                    <p class="hero-subtitle" id="heroSubTitle">
+                        타고난 사주 오행과 재테크 고민을 결합해 손재수 주의보 3일과 황금 재물 타이밍 3일을 집어드려요.
+                    </p>
+                    <div class="env-status-banner">
+                        <span>판매자: <strong id="envOwnerDisplay">로딩중...</strong></span>
+                        <span>동적 설정가: <strong id="envPriceDisplay">로딩중...</strong></span>
+                    </div>
+                </div>
+
+                <!-- 좌측 하단 1x1 벤토 타일 (손실 방어액) -->
+                <div class="bento-tile-half">
+                    <span class="bento-tile-label" id="lossAversionLabel">🛡️ 손재수 3일 회피 시</span>
+                    <div class="bento-tile-value" id="lossAversionAmount">평균 185,000원</div>
+                    <span class="bento-tile-sub">월간 충동·실수 지출 방어</span>
+                </div>
+
+                <!-- 우측 하단 1x1 벤토 타일 (실시간 만족도 & 보안) -->
+                <div class="bento-tile-half">
+                    <span class="bento-tile-label">⭐ 리포트 정밀도</span>
+                    <div class="bento-tile-value" style="color: var(--toss-success);">98.7% 만족</div>
+                    <span class="bento-tile-sub">오행 명식 × 금융 시드 결합</span>
+                </div>
+            </section>
+
+            <!-- [SCR-01: 사주 및 고민 정보 입력 리퀴드 글래스 뷰] -->
+            <section class="tds-card" id="inputSection">
+                <div class="form-group">
+                    <label class="form-label" for="userNameInput">이름 또는 닉네임 (AES-256 자동 암호화 보관)</label>
+                    <input
+                        type="text"
+                        id="userNameInput"
+                        class="tds-input"
+                        placeholder="예: 김토스"
+                        value="김토스"
+                    />
+                </div>
+
+                <div class="form-row-2 form-group">
+                    <div>
+                        <label class="form-label" for="birthDateInput">생년월일</label>
+                        <input
+                            type="date"
+                            id="birthDateInput"
+                            class="tds-input"
+                            value="1996-05-15"
+                        />
+                    </div>
+                    <div>
+                        <label class="form-label" for="birthHourSelect">태어난 시간</label>
+                        <select id="birthHourSelect" class="tds-select">
+                            <option value="모름(시간 미상)">모름 (시간 미상)</option>
+                            <option value="자시(23:30~01:29)">자시 (23:30~01:29)</option>
+                            <option value="축시(01:30~03:29)">축시 (01:30~03:29)</option>
+                            <option value="인시(03:30~05:29)">인시 (03:30~05:29)</option>
+                            <option value="묘시(05:30~07:29)">묘시 (05:30~07:29)</option>
+                            <option value="진시(07:30~09:29)">진시 (07:30~09:29)</option>
+                            <option value="사시(09:30~11:29)">사시 (09:30~11:29)</option>
+                            <option value="오시(11:30~13:29)" selected>오시 (11:30~13:29)</option>
+                            <option value="미시(13:30~15:29)">미시 (13:30~15:29)</option>
+                            <option value="신시(15:30~17:29)">신시 (15:30~17:29)</option>
+                            <option value="유시(17:30~19:29)">유시 (17:30~19:29)</option>
+                            <option value="술시(19:30~21:29)">술시 (19:30~21:29)</option>
+                            <option value="해시(21:30~23:29)">해시 (21:30~23:29)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row-2 form-group">
+                    <div>
+                        <label class="form-label" for="genderSelect">성별</label>
+                        <select id="genderSelect" class="tds-select">
+                            <option value="female" selected>여성</option>
+                            <option value="male">남성</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="calendarSelect">양력 / 음력</label>
+                        <select id="calendarSelect" class="tds-select">
+                            <option value="solar" selected>양력</option>
+                            <option value="lunar">음력 (평달)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">현재 가장 집중하고 있는 고민 (Material Expressive 모핑 칩)</label>
+                    <div class="chip-group" id="concernChipGroup">
+                        <button type="button" class="tds-chip selected" data-topic="주식·투자 타이밍">📈 주식·투자 타이밍</button>
+                        <button type="button" class="tds-chip" data-topic="이직·연봉협상 운세">💼 이직·연봉협상</button>
+                        <button type="button" class="tds-chip" data-topic="충동구매·지출 방어">🛡️ 지출·손재수 방어</button>
+                        <button type="button" class="tds-chip" data-topic="내집마련·청약 문서운">🏠 내집마련·문서운</button>
+                        <button type="button" class="tds-chip" data-topic="부업·사업 파이프라인">🚀 부업·창업 수익</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- [SCR-02: AI 사주 명식 분석 로딩 뷰] -->
+            <section class="tds-card hidden" id="loadingSection">
+                <div class="loading-container">
+                    <div class="spinner-ring"></div>
+                    <h2 style="font-size: 18px; font-weight: 800; margin-bottom: 6px;">
+                        개인정보를 AES-256으로 안전하게 잠그고<br />사주 오행의 재물 기운을 읽고 있어요
+                    </h2>
+                    <p style="font-size: 13px; color: var(--text-secondary);">
+                        잠시만 기다려 주세요 (약 1초 소요)
+                    </p>
+                </div>
+            </section>
+
+            <!-- [SCR-03 & SCR-05: 무료 진단 결과 + 유료 블러(Paywall) / 잠금 해제 뷰] -->
+            <div class="hidden" id="resultContainer" style="display: flex; flex-direction: column; gap: 14px;">
+                
+                <!-- 4-1. 무료 요약 결과 카드 -->
+                <section class="tds-card">
+                    <span class="hero-badge" style="background: var(--toss-success-bg); color: var(--toss-success); margin-bottom: 10px;">
+                        무료 사주 재물 그릇 진단 완료
+                    </span>
+                    <div class="score-header">
+                        <div>
+                            <p style="font-size: 13px; color: var(--text-secondary); font-weight: 600;" id="freeElementText">오행 분석 결과</p>
+                            <h2 style="font-size: 18px; font-weight: 800; margin-top: 2px;" id="freeWealthTypeText">재물 유형</h2>
+                        </div>
+                        <div class="score-number" id="freeWealthScoreText">0점</div>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="freeScoreBar" style="width: 0%;"></div>
+                    </div>
+                    <p style="font-size: 14px; color: var(--text-secondary); background: var(--input-bg); padding: 14px; border-radius: 14px;" id="freeAdviceText">
+                        무료 조언 텍스트
+                    </p>
+
+                    <div style="margin-top: 12px; font-size: 11px; color: var(--text-muted); word-break: break-all;">
+                        🔐 <strong>암호화 저장 증적(AES-256-GCM):</strong> <span id="cryptoAuditText"></span>
+                    </div>
+                </section>
+
+                <!-- 4-2. 유료 블러(Paywall) 및 잠금 해제 프리미엄 머니캘린더 카드 -->
+                <section class="tds-card paywall-wrapper" id="paywallCard">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                        <h3 style="font-size: 17px; font-weight: 800;">📅 이번 달 머니캘린더 & 개운 리포트</h3>
+                        <span class="hero-badge" id="unlockStatusBadge" style="margin-bottom: 0;">🔒 유료 잠금</span>
+                    </div>
+
+                    <div class="blurred-content" id="premiumReportContent">
+                        <h4 style="font-size: 14px; font-weight: 800; color: var(--toss-danger); margin-bottom: 8px;">
+                            🚨 지갑 절대 열면 안 되는 [손재수 주의보 3일]
+                        </h4>
+                        <div id="dangerDaysList"></div>
+
+                        <h4 style="font-size: 14px; font-weight: 800; color: var(--toss-success); margin: 18px 0 8px;">
+                            💰 매수·계약·협상에 운이 터지는 [황금 재물일 3일]
+                        </h4>
+                        <div id="luckyDaysList"></div>
+
+                        <div style="margin-top: 18px; background: var(--input-bg); padding: 16px; border-radius: 16px;">
+                            <h4 style="font-size: 14px; font-weight: 800; margin-bottom: 8px;">
+                                ✨ 오행 밸런스 맞춤 재테크 개운 처방전
+                            </h4>
+                            <p style="font-size: 13px; margin-bottom: 6px;">
+                                • <strong>행운을 부르는 컬러:</strong> <span id="strategyColor"></span>
+                            </p>
+                            <p style="font-size: 13px; margin-bottom: 6px;">
+                                • <strong>금전 귀인 방향:</strong> <span id="strategyDirection"></span>
+                            </p>
+                            <p style="font-size: 13px; margin-bottom: 10px;">
+                                • <strong>이번 달 개운 루틴:</strong> <span id="strategyAction"></span>
+                            </p>
+                            <p style="font-size: 13px; font-weight: 700;">🍀 사주 시드 기반 이번 달 행운 번호 6개</p>
+                            <div class="lucky-balls-row" id="luckyNumbersContainer"></div>
+                        </div>
+                    </div>
+
+                    <div class="paywall-overlay" id="paywallOverlay">
+                        <div class="lock-circle">💎</div>
+                        <span style="font-size: 11px; font-weight: 800; color: #38BDF8; letter-spacing: 0.5px; margin-bottom: 4px;">
+                            SPATIAL HOLOGRAPHIC EDITION
+                        </span>
+                        <h4 style="font-size: 19px; font-weight: 800; margin-bottom: 8px; color: #FFFFFF;">
+                            이번 달 내 돈 새는 날짜 3일이<br />정확히 추출되었어요!
+                        </h4>
+                        <p style="font-size: 13px; color: #CBD5E1; margin-bottom: 18px;">
+                            한 번의 충동지출·투자 실수로 빠져나갈 돈을 미리 막고,<br />가장 재물운이 강한 황금 타이밍 3일을 바로 확인해 보세요.
+                        </p>
+                        <button type="button" class="tds-primary-btn" id="inlineUnlockBtn" style="max-width: 320px;">
+                            1,900원으로 전체 날짜 잠금 해제하기
+                        </button>
+                    </div>
+                </section>
+
+                <section class="tds-card hidden" id="receiptSuccessCard" style="border: 2px solid var(--toss-success);">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span style="font-size: 12px; font-weight: 700; color: var(--toss-success);">✔ 토스 인앱 결제 검증 완료</span>
+                            <h4 style="font-size: 15px; font-weight: 800; margin-top: 2px;" id="receiptOrderTitle">프리미엄 리포트 영구 열람권</h4>
+                        </div>
+                        <button type="button" class="tds-chip selected" id="copyReportBtn" style="font-size: 12px; padding: 8px 12px;">
+                            📋 리포트 요약 복사
+                        </button>
+                    </div>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;" id="receiptMetaText"></p>
+                </section>
+
+            </div>
+
+        </main>
+
+        <!-- 5. 하단 고정 플로팅 바 + [차별화 #5] 홀로그래픽 쉬머 CTA 버튼 -->
+        <div class="sticky-bottom-bar">
+            <div class="floating-nudge-bubble" id="floatingNudgeBubble">
+                ⚡ 3초 만에 무료로 내 금전 에너지 점수를 확인해 보세요!
+            </div>
+            <button type="button" class="tds-primary-btn" id="mainCtaBtn">
+                내 사주로 무료 금전 점수 확인하기
+            </button>
+        </div>
+
+        <!-- 6. 토스페이 스타일 원클릭 결제 바텀시트 모달 -->
+        <div class="modal-backdrop" id="paymentModalBackdrop">
+            <div class="tosspay-sheet">
+                <div class="sheet-handle"></div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div class="toss-logo-badge" style="width: 24px; height: 24px; font-size: 13px;">T</div>
+                        <span style="font-size: 18px; font-weight: 800;">토스페이 원클릭 결제</span>
+                    </div>
+                    <span class="security-pill">🔒 안심결제</span>
+                </div>
+                <p style="font-size: 13px; color: var(--text-secondary);">
+                    결제 즉시 블러(잠금)가 해제되며 이번 달 손재수 날짜와 황금 재물일이 모두 공개돼요.
+                </p>
+
+                <div class="receipt-box">
+                    <div class="receipt-row">
+                        <span>상품명</span>
+                        <strong style="color: var(--text-primary);">머니사주 AI 월간 프리미엄 리포트</strong>
+                    </div>
+                    <div class="receipt-row">
+                        <span>판매자 식별자 (.env 동적 연동)</span>
+                        <span id="modalOwnerIdText">TOSS_****_CHUNHAK</span>
+                    </div>
+                    <div class="receipt-row">
+                        <span>정산 파트너스</span>
+                        <span id="modalUserIdentityText">이춘****디오</span>
+                    </div>
+                    <div class="receipt-row total">
+                        <span>최종 결제 금액</span>
+                        <span style="color: var(--accent-primary);" id="modalFinalPriceText">1,900원</span>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 10px;">
+                    <button
+                        type="button"
+                        id="cancelPayModalBtn"
+                        style="padding: 16px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--input-bg); color: var(--text-secondary); font-weight: 700; font-size: 15px; cursor: pointer;"
+                    >
+                        닫기
+                    </button>
+                    <button type="button" class="tds-primary-btn" id="confirmTossPayBtn">
+                        1,900원 바로 결제하기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>

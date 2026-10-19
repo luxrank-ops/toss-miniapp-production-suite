@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>환급레이더 AI - 토스 미니앱 (iOS Spatial × Google Expressive 에디션)</title>
+    <link rel="stylesheet" href="/styles/tds-refund.css" />
+</head>
+<body>
+    <div class="tds-toast" id="tdsToast">알림 메시지</div>
+
+    <div class="toss-webview-shell">
+        
+        <!-- 1. 상단 리퀴드 글래스 헤더 + 다크/라이트 글래스 모드 스위치 -->
+        <header class="toss-header">
+            <div class="toss-header-left">
+                <div class="toss-logo-badge">₩</div>
+                <span class="toss-header-title" id="headerAppTitle">환급레이더 AI</span>
+            </div>
+            <div class="header-right-actions">
+                <div class="security-pill" title="개인정보 AES-256-GCM 암호화 보호 적용됨">
+                    🔒 AES-256
+                </div>
+                <button
+                    type="button"
+                    class="theme-toggle-btn"
+                    id="themeToggleBtn"
+                    title="크리스탈 라이트 / 스페이셜 다크 글래스 모드 전환"
+                >
+                    🌙
+                </button>
+            </div>
+        </header>
+
+        <!-- 2. [차별화 #1] iOS Dynamic Island Live Activity Capsule -->
+        <div class="dynamic-island-wrap">
+            <div class="dynamic-island-pill" id="dynamicIslandPill" title="터치하여 실시간 보안·환급 통계 확장 보기">
+                <div class="dynamic-island-top">
+                    <div class="island-left">
+                        <span class="ticker-live-dot"></span>
+                        <span class="ticker-message" id="socialTickerText">
+                            방금 서울 송파구 박*훈님이 숨은 건보료·실비 환급금 412,000원을 발견했어요
+                        </span>
+                    </div>
+                    <span class="island-expand-hint" id="islandHintText">터치 ▼</span>
+                </div>
+                <div class="dynamic-island-expanded">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span>📡 4대 기관 환급 엔진 가동률: <strong style="color: #00E682;">99.9%</strong></span>
+                        <span>🔐 AES-256-GCM 무결성 검증됨</span>
+                    </div>
+                    <div>
+                        🍎 iOS Spatial Bento Grid & 🤖 Google Material Expressive 하이브리드 UI
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 세그먼트 컨트롤 탭 -->
+        <nav class="loop-switcher-bar" aria-label="타겟별 환급 스캔 모드 전환">
+            <div class="segmented-track">
+                <button type="button" class="loop-tab-btn active" data-mode="WORKER_REFUND">
+                    직장인·가계 환급
+                </button>
+                <button type="button" class="loop-tab-btn" data-mode="SENIOR_MEDICAL">
+                    시니어 병원비·건보료
+                </button>
+                <button type="button" class="loop-tab-btn" data-mode="FREELANCE_TAX">
+                    자영업·N잡러 환급
+                </button>
+            </div>
+        </nav>
+
+        <!-- 4. 메인 컨텐츠 영역 -->
+        <main class="toss-main">
+
+            <!-- 3단계 퍼널 스텝 인디케이터 -->
+            <div class="funnel-steps-bar">
+                <div class="funnel-step-item active" id="funnelStep1">
+                    <span class="step-num-circle">1</span>
+                    <span>지출 프로필</span>
+                </div>
+                <span style="color: var(--text-muted); font-size: 12px;">➔</span>
+                <div class="funnel-step-item" id="funnelStep2">
+                    <span class="step-num-circle">2</span>
+                    <span>무료 환급액 스캔</span>
+                </div>
+                <span style="color: var(--text-muted); font-size: 12px;">➔</span>
+                <div class="funnel-step-item" id="funnelStep3">
+                    <span class="step-num-circle">3</span>
+                    <span>신청 치트키 해제</span>
+                </div>
+            </div>
+
+            <!-- [차별화 #2] Apple Bento Grid (비대칭 2열 대시보드 레이아웃) -->
+            <section class="bento-dashboard-grid" aria-label="벤토 그리드 핵심 요약">
+                <div class="bento-tile-wide">
+                    <div class="hero-top-row">
+                        <span class="hero-badge" id="heroModeBadge">3050 직장인·주부 환급 만족도 1위</span>
+                        <span class="diff-trend-tag">💎 iOS·Google 차별화 UI</span>
+                    </div>
+                    <h1 class="hero-title" id="heroMainTitle">
+                        잠자고 있는 내 병원비·건보료,<br />얼마나 쌓여있는지 스캔해요
+                    </h1>
+                    <p class="hero-subtitle" id="heroSubTitle">
+                        최근 3년간 미청구된 건강보험 상한액 초과금, 소액 실비, 통신비 과오납금, 소멸예정 카드포인트를 한 번에 계산해 드려요.
+                    </p>
+                    <div class="env-status-banner">
+                        <span>판매자: <strong id="envOwnerDisplay">로딩중...</strong></span>
+                        <span>동적 설정가: <strong id="envPriceDisplay">로딩중...</strong></span>
+                    </div>
+                </div>
+
+                <div class="bento-tile-half">
+                    <span class="bento-tile-label">⏰ 소멸시효 3년 내 회수 시</span>
+                    <div class="bento-tile-value">평균 384,000원</div>
+                    <span class="bento-tile-sub">1인당 미청구 환급 기대액</span>
+                </div>
+
+                <div class="bento-tile-half">
+                    <span class="bento-tile-label">⚡ 직통 신청 소요 시간</span>
+                    <div class="bento-tile-value" style="color: #3182F6;">평균 1분 30초</div>
+                    <span class="bento-tile-sub">4대 기관 메뉴 경로 즉시 안내</span>
+                </div>
+            </section>
+
+            <!-- [SCR-01: 4문항 초간단 프로필 입력 뷰] -->
+            <section class="tds-card" id="inputSection">
+                <div class="form-group">
+                    <label class="form-label" for="userNameInput">이름 또는 닉네임 (AES-256 자동 암호화 보관)</label>
+                    <input
+                        type="text"
+                        id="userNameInput"
+                        class="tds-input"
+                        placeholder="예: 이토스"
+                        value="이토스"
+                    />
+                </div>
+
+                <div class="form-row-2 form-group">
+                    <div>
+                        <label class="form-label" for="ageGroupSelect">연령대</label>
+                        <select id="ageGroupSelect" class="tds-select">
+                            <option value="20대 사회초년생">20대 사회초년생</option>
+                            <option value="30대~40대" selected>30대~40대</option>
+                            <option value="50대~60대 시니어">50대~60대 시니어</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="jobTypeSelect">직업 / 소득 유형</label>
+                        <select id="jobTypeSelect" class="tds-select">
+                            <option value="직장인(4대보험)" selected>직장인 (4대보험)</option>
+                            <option value="자영업·소상공인">자영업·소상공인</option>
+                            <option value="프리랜서·3.3% 공제">프리랜서 (3.3%)</option>
+                            <option value="주부·은퇴자">주부·은퇴자</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">최근 3년 내 병원·약국 이용 빈도 (Material Expressive 모핑 칩)</label>
+                    <div class="chip-group" id="medicalChipGroup">
+                        <button type="button" class="tds-chip" data-medical="연 1~3회 가끔 이용">🏥 연 1~3회 가끔</button>
+                        <button type="button" class="tds-chip selected" data-medical="연 4~10회 병원·약국 이용">💊 연 4~10회 보통</button>
+                        <button type="button" class="tds-chip" data-medical="연 11회 이상 정기 통원·약 처방">🩺 연 11회 이상 자주</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">월평균 카드·통신비·구독료 합산 지출 구간</label>
+                    <div class="chip-group" id="spendChipGroup">
+                        <button type="button" class="tds-chip" data-spend="월 100만 원 미만 지출">💳 100만 원 미만</button>
+                        <button type="button" class="tds-chip selected" data-spend="월 100만~200만 원 지출">💰 100만~200만 원</button>
+                        <button type="button" class="tds-chip" data-spend="월 200만 원 이상 지출">💎 200만 원 이상</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- [SCR-02: AI 환급 레이더 스캔 애니메이션 뷰] -->
+            <section class="tds-card hidden" id="loadingSection">
+                <div class="loading-container">
+                    <div class="radar-pulse">📡</div>
+                    <h2 style="font-size: 18px; font-weight: 800; margin-bottom: 6px;">
+                        개인정보를 AES-256으로 안전하게 암호화하고<br />4대 기관 미청구 환급금을 스캔하고 있어요
+                    </h2>
+                    <p style="font-size: 13px; color: var(--text-secondary);">
+                        건보공단 · 실손보험 · 통신3사 · 카드포인트 대조 중...
+                    </p>
+                </div>
+            </section>
+
+            <!-- [SCR-03 & SCR-05: 무료 환급 총액 스캔 결과 + 유료 블러 / 잠금 해제 뷰] -->
+            <div class="hidden" id="resultContainer" style="display: flex; flex-direction: column; gap: 14px;">
+                
+                <section class="tds-card">
+                    <span class="hero-badge" style="margin-bottom: 6px;">무료 4대 기관 환급 레이더 스캔 완료</span>
+                    <p style="font-size: 13px; color: var(--text-secondary); font-weight: 600;" id="freeUserHeaderText">
+                        분석 완료
+                    </p>
+
+                    <div class="refund-amount-hero">
+                        <span style="font-size: 12px; color: #CBD5E1; font-weight: 600;">
+                            내가 찾아갈 수 있는 총 예상 환급·절약 가능 금액
+                        </span>
+                        <div class="refund-big-number" id="freeTotalRefundText">0원</div>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 700;">
+                        <span>나의 고정지출·현금 누수 방어 지수</span>
+                        <span style="color: var(--accent-primary);" id="freeDefenseScoreText">82점</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="freeDefenseBar" style="width: 82%;"></div>
+                    </div>
+
+                    <div style="margin-top: 12px; font-size: 11px; color: var(--text-muted); word-break: break-all;">
+                        🔐 <strong>암호화 저장 증적(AES-256-GCM):</strong> <span id="cryptoAuditText"></span>
+                    </div>
+                </section>
+
+                <section class="tds-card paywall-wrapper" id="paywallCard">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                        <h3 style="font-size: 17px; font-weight: 800;">📋 4대 기관별 환급액 & 1분 신청 치트키</h3>
+                        <span class="hero-badge" id="unlockStatusBadge" style="margin-bottom: 0; background: var(--toss-danger-bg); color: var(--toss-danger);">
+                            🔒 유료 잠금
+                        </span>
+                    </div>
+
+                    <div class="blurred-content" id="premiumReportContent">
+                        <div id="refundItemsList"></div>
+
+                        <div style="margin-top: 16px; background: var(--input-bg); padding: 16px; border-radius: 16px;">
+                            <h4 style="font-size: 14px; font-weight: 800; color: var(--accent-primary); margin-bottom: 8px;">
+                                💡 연간 고정지출 다이어트 처방전 (예상 절감: <span id="annualSaveText">0원</span>/년)
+                            </h4>
+                            <p style="font-size: 13px; margin-bottom: 10px;" id="topLeakHabitText"></p>
+                            <div id="checklistContainer" style="font-size: 13px; font-weight: 600;"></div>
+                        </div>
+                    </div>
+
+                    <div class="paywall-overlay" id="paywallOverlay">
+                        <div class="lock-circle">💸</div>
+                        <span style="font-size: 11px; font-weight: 800; color: #00E682; letter-spacing: 0.5px; margin-bottom: 4px;">
+                            SPATIAL HOLOGRAPHIC EDITION
+                        </span>
+                        <h4 style="font-size: 19px; font-weight: 800; margin-bottom: 8px; color: #FFFFFF;">
+                            4곳의 숨은 환급금 내역과<br />1분 직통 신청 경로가 준비되었어요!
+                        </h4>
+                        <p style="font-size: 13px; color: #CBD5E1; margin-bottom: 18px;">
+                            복잡한 공단·보험사 메뉴를 헤매지 마세요.<br />어디서 어떻게 눌러야 즉시 계좌로 입금되는지 바로 열어드려요.
+                        </p>
+                        <button type="button" class="tds-primary-btn" id="inlineUnlockBtn" style="max-width: 320px;">
+                            2,900원으로 4대 환급 신청 루트 열기
+                        </button>
+                    </div>
+                </section>
+
+                <section class="tds-card hidden" id="receiptSuccessCard" style="border: 2px solid var(--toss-emerald);">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span style="font-size: 12px; font-weight: 700; color: var(--toss-emerald);">✔ 토스 인앱 결제 검증 완료</span>
+                            <h4 style="font-size: 15px; font-weight: 800; margin-top: 2px;">4대 환급금 신청 치트키 영구 열람권</h4>
+                        </div>
+                        <button type="button" class="tds-chip selected" id="copyReportBtn" style="font-size: 12px; padding: 8px 12px;">
+                            📋 환급 체크리스트 복사
+                        </button>
+                    </div>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;" id="receiptMetaText"></p>
+                </section>
+
+            </div>
+
+        </main>
+
+        <!-- 5. 하단 고정 플로팅 CTA 바 + 홀로그래픽 쉬머 버튼 -->
+        <div class="sticky-bottom-bar">
+            <div class="floating-nudge-bubble" id="floatingNudgeBubble">
+                ⚡ 3초 만에 무료로 내 숨은 환급금 총액을 스캔해 보세요!
+            </div>
+            <button type="button" class="tds-primary-btn" id="mainCtaBtn">
+                내 숨은 환급금 무료로 스캔하기
+            </button>
+        </div>
+
+        <!-- 6. 토스페이 원클릭 결제 바텀시트 모달 -->
+        <div class="modal-backdrop" id="paymentModalBackdrop">
+            <div class="tosspay-sheet">
+                <div class="sheet-handle"></div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div class="toss-logo-badge" style="width: 24px; height: 24px; font-size: 13px;">₩</div>
+                        <span style="font-size: 18px; font-weight: 800;">토스페이 원클릭 결제</span>
+                    </div>
+                    <span class="security-pill">🔒 안심결제</span>
+                </div>
+                <p style="font-size: 13px; color: var(--text-secondary);">
+                    결제 즉시 블러(잠금)가 해제되며 4대 기관별 환급 금액과 1분 직통 신청 가이드가 모두 공개돼요.
+                </p>
+
+                <div class="receipt-box">
+                    <div class="receipt-row">
+                        <span>상품명</span>
+                        <strong style="color: var(--text-primary);">환급레이더 AI 4대 기관 신청 치트시트</strong>
+                    </div>
+                    <div class="receipt-row">
+                        <span>판매자 식별자 (.env 동적 연동)</span>
+                        <span id="modalOwnerIdText">TOS****P2</span>
+                    </div>
+                    <div class="receipt-row">
+                        <span>정산 파트너스</span>
+                        <span id="modalUserIdentityText">이춘****크랩</span>
+                    </div>
+                    <div class="receipt-row total">
+                        <span>최종 결제 금액</span>
+                        <span style="color: var(--accent-primary);" id="modalFinalPriceText">2,900원</span>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 10px;">
+                    <button
+                        type="button"
+                        id="cancelPayModalBtn"
+                        style="padding: 16px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--input-bg); color: var(--text-secondary); font-weight: 700; font-size: 15px; cursor: pointer;"
+                    >
+                        닫기
+                    </button>
+                    <button type="button" class="tds-primary-btn" id="confirmTossPayBtn">
+                        2,900원 바로 결제하기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>

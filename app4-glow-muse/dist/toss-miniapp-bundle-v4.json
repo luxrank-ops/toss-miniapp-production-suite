@@ -1,0 +1,99 @@
+{
+  "uploadStatus": "SUCCESS",
+  "miniappId": "toss-miniapp-glow-muse-2026-v4",
+  "draftVersion": "v4.1.0-skin-scanner-studio-2026",
+  "appTitle": "MuseGlow AI - 한국 여성 트렌드 진단 & AI 포토 스튜디오",
+  "marketingHeadline": "청담동 30만원짜리 얼굴·체질 진단? 내 숨은 추구미 찾고 피부과·올영 호구 탈출하는 시크릿 처방전",
+  "brandName": "뮤즈글로우 AI (MuseGlow AI v4.1)",
+  "qaStatus": "PASS",
+  "qaScore": "100/100",
+  "commercialViabilityScore": "9.3/10.0",
+  "bundleHash": "d3dab413a95010b2f97ca04b0f5c70308ed051fe181996bcb7eee000d2a3d655",
+  "endpointUrl": "http://localhost:3003",
+  "businessArchitectureOverrides": {
+    "paywallType": "HARD_PAYWALL (10.7% median conversion)",
+    "primaryPlan": "21일 무료 체험 + 연간 VIP 패스 ₩79,000 (100 크레딧)",
+    "decoyStarterPlan": "스타터 크레딧 팩 ₩9,900 (30 크레딧)",
+    "skinScannerEndpoint": "POST /api/skin/scan (5대 지표 + 4주 장벽 회복 예측 + 스마트 쇼핑 리스트)",
+    "ownerMasked": "TOS********026",
+    "encryptionStandard": "AES-256-GCM (얼굴 사진 즉시 메모리 파기)"
+  },
+  "fileManifest": [
+    {
+      "path": ".env.example",
+      "sizeBytes": 1486,
+      "sha256": "0c82a58731f4ab2e"
+    },
+    {
+      "path": "supabase/migrations/001_create_glow_muse_tables.sql",
+      "sizeBytes": 2812,
+      "sha256": "cfcce322637bbf36"
+    },
+    {
+      "path": "supabase/migrations/002_create_glow_deploy_logs.sql",
+      "sizeBytes": 951,
+      "sha256": "698c7af57e3109e1"
+    },
+    {
+      "path": "supabase/migrations/003_upgrade_business_evaluator_override.sql",
+      "sizeBytes": 2159,
+      "sha256": "c0e8ee51831da30d"
+    },
+    {
+      "path": "supabase/migrations/004_create_skin_scanner_tables.sql",
+      "sizeBytes": 2005,
+      "sha256": "c8fe301d30bc734b"
+    },
+    {
+      "path": "src/types.ts",
+      "sizeBytes": 1373,
+      "sha256": "017e518482194af3"
+    },
+    {
+      "path": "src/components/BarrierRecoveryDashboard.tsx",
+      "sizeBytes": 4890,
+      "sha256": "a2d8486ec7b84e9d"
+    },
+    {
+      "path": "src/components/SkinScannerView.tsx",
+      "sizeBytes": 24691,
+      "sha256": "d4c26f00c2fea5d4"
+    },
+    {
+      "path": "backend/config/envLoader.js",
+      "sizeBytes": 5030,
+      "sha256": "aa151508200bec16"
+    },
+    {
+      "path": "backend/security/cryptoManager.js",
+      "sizeBytes": 3682,
+      "sha256": "8ea64c9a7374df50"
+    },
+    {
+      "path": "backend/services/glowEngine.js",
+      "sizeBytes": 33019,
+      "sha256": "7c27b5996411ccc3"
+    },
+    {
+      "path": "backend/server.js",
+      "sizeBytes": 25664,
+      "sha256": "bdfd057e502d49d3"
+    },
+    {
+      "path": "frontend/index.html",
+      "sizeBytes": 48193,
+      "sha256": "e7ea4d83c83d4faf"
+    },
+    {
+      "path": "frontend/styles/tds-glow.css",
+      "sizeBytes": 16291,
+      "sha256": "34bb48fbc53d6cf6"
+    },
+    {
+      "path": "frontend/js/app.js",
+      "sizeBytes": 45496,
+      "sha256": "85794892e5d4b5dd"
+    }
+  ],
+  "deployedAt": "2026-10-19T09:07:42.753Z"
+}

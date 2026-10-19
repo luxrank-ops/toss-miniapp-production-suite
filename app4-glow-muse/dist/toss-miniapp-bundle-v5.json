@@ -1,0 +1,102 @@
+{
+  "uploadStatus": "SUCCESS",
+  "miniappId": "toss-miniapp-glow-muse-2026-v4",
+  "draftVersion": "v5.0.0-multi-agent-masterpiece-2026",
+  "appTitle": "MuseGlow AI v5.0 - 한국 여성 트렌드 진단 & AI 포토 스튜디오",
+  "marketingHeadline": "청담동 30만원짜리 얼굴·체질 진단? 내 숨은 추구미 찾고 피부과·올영 호구 탈출하는 시크릿 처방전",
+  "brandName": "뮤즈글로우 AI (MuseGlow AI v5.0)",
+  "qaStatus": "PASS",
+  "qaScore": "100/100",
+  "commercialViabilityScore": "9.6/10.0",
+  "bundleHash": "4198a2459ac343435d665d31b9cb12c598c33fe5d46e7ae5f6dd722750918141",
+  "endpointUrl": "http://localhost:3003",
+  "multiAgentCollaborationSummary": {
+    "rank1_appBusinessEvaluator": "Hard Paywall(10.7%) + 21일 무료 체험 후 연 ₩79,000(100 크레딧) + 차등 크레딧 차감(-2/-3/-5/-10)",
+    "rank2_topTierAppConsultant": "4주 이원화 회복 비교 곡선(SOS 적용 95점 vs 방치 48점) + 최저가 18% 절약 배지 + 청담 피부과 CPA + 처방 영수증 바이럴(+3 크레딧)",
+    "rank3_crossStoreDesignDifferentiator": "AI 추구미 포토 스튜디오(Before/After 슬라이더 & 4대 룩북) + Holographic Shimmer VIP 카드 + 4주 인터랙티브 게이지",
+    "rank4_tossTop10DesignBenchmarker": "실시간 소셜 프루프 라이브 티커(3.5초 롤링) + 슬롯머신 카운트업(easeOutExpo) + 3단계 햅틱 & 스프링 바텀시트"
+  },
+  "fileManifest": [
+    {
+      "path": ".env.example",
+      "sizeBytes": 1486,
+      "sha256": "0c82a58731f4ab2e"
+    },
+    {
+      "path": "supabase/migrations/001_create_glow_muse_tables.sql",
+      "sizeBytes": 2812,
+      "sha256": "cfcce322637bbf36"
+    },
+    {
+      "path": "supabase/migrations/002_create_glow_deploy_logs.sql",
+      "sizeBytes": 951,
+      "sha256": "698c7af57e3109e1"
+    },
+    {
+      "path": "supabase/migrations/003_upgrade_business_evaluator_override.sql",
+      "sizeBytes": 2159,
+      "sha256": "c0e8ee51831da30d"
+    },
+    {
+      "path": "supabase/migrations/004_create_skin_scanner_tables.sql",
+      "sizeBytes": 2005,
+      "sha256": "c8fe301d30bc734b"
+    },
+    {
+      "path": "supabase/migrations/005_upgrade_v5_multi_agent_collaboration.sql",
+      "sizeBytes": 2115,
+      "sha256": "b6419bb746df8774"
+    },
+    {
+      "path": "src/types.ts",
+      "sizeBytes": 1373,
+      "sha256": "017e518482194af3"
+    },
+    {
+      "path": "src/components/BarrierRecoveryDashboard.tsx",
+      "sizeBytes": 4890,
+      "sha256": "a2d8486ec7b84e9d"
+    },
+    {
+      "path": "src/components/SkinScannerView.tsx",
+      "sizeBytes": 24691,
+      "sha256": "d4c26f00c2fea5d4"
+    },
+    {
+      "path": "backend/config/envLoader.js",
+      "sizeBytes": 5030,
+      "sha256": "aa151508200bec16"
+    },
+    {
+      "path": "backend/security/cryptoManager.js",
+      "sizeBytes": 3682,
+      "sha256": "8ea64c9a7374df50"
+    },
+    {
+      "path": "backend/services/glowEngine.js",
+      "sizeBytes": 41801,
+      "sha256": "16a289012e0c87eb"
+    },
+    {
+      "path": "backend/server.js",
+      "sizeBytes": 27563,
+      "sha256": "db476f0c4a93025e"
+    },
+    {
+      "path": "frontend/index.html",
+      "sizeBytes": 61485,
+      "sha256": "95203975d8001ade"
+    },
+    {
+      "path": "frontend/styles/tds-glow.css",
+      "sizeBytes": 25261,
+      "sha256": "a0b9e5021540515d"
+    },
+    {
+      "path": "frontend/js/app.js",
+      "sizeBytes": 60553,
+      "sha256": "792547236ac3698b"
+    }
+  ],
+  "deployedAt": "2026-10-19T09:25:14.396Z"
+}

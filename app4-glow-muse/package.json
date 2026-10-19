@@ -1,0 +1,20 @@
+{
+  "name": "toss-miniapp-app4-glow-muse",
+  "version": "4.0.0",
+  "description": "청담동 30만원짜리 얼굴·체질 진단? 내 숨은 추구미 찾고 피부과·올영 호구 탈출하는 시크릿 처방전 (뮤즈글로우 AI)",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "qa": "node scripts/qa-auditor.js",
+    "deploy": "node scripts/toss-deploy-agent.js"
+  },
+  "keywords": [
+    "toss-miniapp",
+    "chugumi",
+    "slow-aging",
+    "olive-young",
+    "womens-wellness"
+  ],
+  "author": "Antigravity Multi-Agent Swarm",
+  "license": "PRIVATE"
+}

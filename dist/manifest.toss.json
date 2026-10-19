@@ -1,0 +1,49 @@
+{
+  "platform": "Toss Mini-App Partner Console (Automated CLI Bridge)",
+  "uploadStatus": "SUCCESS",
+  "qaAuditScore": 100,
+  "bundleChecksum": "sha256:322bc4cd942e2fad",
+  "dynamicEnvironmentBinding": {
+    "envFile": ".env / .env.example",
+    "configuredPriceKRW": 1900,
+    "maskedOwnerId": "TOS****AK",
+    "maskedUserIdentity": "이춘학****디오",
+    "encryptionStandard": "AES-256-GCM"
+  },
+  "deployedMiniApps": [
+    {
+      "loopNumber": 1,
+      "targetGeneration": "MZ세대 (2030 직장인·사회초년생)",
+      "appId": "toss-miniapp-mzsaju-322bc4",
+      "draftVersion": "v1.0.0-rc.1",
+      "appTitle": "머니사주 AI : 내 사주로 보는 이번 달 돈 새는 날 & 재물 타이밍 리포트",
+      "iconPlaceholder": "assets://toss-miniapp/icons/mzsaju-gold-calendar-512.png",
+      "webviewEndpoint": "http://localhost:3000/?loop=1&category=MZ_SAJU",
+      "monetizationPriceKRW": 1900,
+      "ownerIdentityMasked": "TOS****AK"
+    },
+    {
+      "loopNumber": 2,
+      "targetGeneration": "액티브 시니어 (5060 은퇴준비·건강관심층)",
+      "appId": "toss-miniapp-seniorhq-cd942e",
+      "draftVersion": "v1.0.0-rc.1",
+      "appTitle": "시니어 건강·지원금 AI : 병원비 누수 방어 & 문서운 캘린더",
+      "iconPlaceholder": "assets://toss-miniapp/icons/senior-health-shield-512.png",
+      "webviewEndpoint": "http://localhost:3000/?loop=2&category=SENIOR_HEALTH",
+      "monetizationPriceKRW": 1900,
+      "ownerIdentityMasked": "TOS****AK"
+    },
+    {
+      "loopNumber": 3,
+      "targetGeneration": "알파·잘파세대 (1020 취향·감정소비층)",
+      "appId": "toss-miniapp-alphafeel-2e2fad",
+      "draftVersion": "v1.0.0-rc.1",
+      "appTitle": "필코노미 갓생 카드 AI : 텅장 방어 & 용돈 챌린지 캘린더",
+      "iconPlaceholder": "assets://toss-miniapp/icons/alpha-feel-card-512.png",
+      "webviewEndpoint": "http://localhost:3000/?loop=3&category=ALPHA_FEEL",
+      "monetizationPriceKRW": 1900,
+      "ownerIdentityMasked": "TOS****AK"
+    }
+  ],
+  "deployedAt": "2026-10-18T14:21:22.783Z"
+}

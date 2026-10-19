@@ -1,0 +1,869 @@
+/**
+ * ============================================================================
+ * 파일명: frontend/styles/tds-theme.css
+ * 역할: [AGENT 2-DIFF & AGENT 5] 토스 Top 10 클리셰 탈피 × 구글 플레이(Material Expressive)
+ *       × 아이폰 앱스토어(iOS Spatial Liquid Glass & Bento Grid & Dynamic Island) 스타일시트
+ * 설명: 기존 토스 미니앱들의 단조로운 회색/흰색 1열 평면 디자인과 확실히 차별화하기 위해
+ *       구글 스토어와 아이폰 최신 앱 트렌드 6대 요소:
+ *       1) iOS Dynamic Island Live Activity Capsule (터치 시 확장되는 상단 플로팅 캡슐)
+ *       2) Apple Bento Grid (비대칭 2열 모듈형 대시보드 그리드)
+ *       3) Spatial Liquid Glass & Aurora Mesh (반투명 굴절 카드 + 오로라 메쉬 배경)
+ *       4) Google Material 3 Expressive Morphing (터치 시 곡률과 테마 컬러가 변하는 칩)
+ *       5) Apple Card Holographic Shimmer (홀로그램 광택이 흐르는 Paywall 및 결제 버튼)
+ *       6) Adaptive Crystal Light / Spatial Dark Mode (원클릭 다크 글래스 테마 전환)
+ *       를 완벽하게 구현한 스타일시트입니다.
+ * ============================================================================
+ */
+
+:root {
+    /* 모드별 동적 변경되는 Material Expressive 액센트 컬러 */
+    --accent-primary: #3182F6;
+    --accent-secondary: #6366F1;
+    --accent-glow: rgba(49, 130, 246, 0.28);
+
+    /* Crystal Light Mode 기본 표면 및 텍스트 컬러 */
+    --bg-outer: #CBD5E1;
+    --bg-shell: #EEF2F9;
+    --aurora-1: rgba(49, 130, 246, 0.22);
+    --aurora-2: rgba(139, 92, 246, 0.18);
+    --aurora-3: rgba(0, 196, 113, 0.16);
+    --glass-surface: rgba(255, 255, 255, 0.78);
+    --glass-border: rgba(255, 255, 255, 0.85);
+    --glass-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.06);
+    --input-bg: rgba(241, 245, 249, 0.85);
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #94A3B8;
+    --border-subtle: rgba(148, 163, 184, 0.24);
+
+    --toss-danger: #F04452;
+    --toss-danger-bg: rgba(240, 68, 82, 0.12);
+    --toss-success: #00C471;
+    --toss-success-bg: rgba(0, 196, 113, 0.12);
+    --toss-gold: #F59E0B;
+    --toss-gold-bg: rgba(245, 158, 11, 0.15);
+    --radius-card: 26px;
+    --radius-btn: 18px;
+}
+
+/* [차별화 #6] iOS Spatial Dark Mode (원클릭 다크 글래스 테마) */
+[data-theme="dark"] {
+    --bg-outer: #020617;
+    --bg-shell: #090D16;
+    --aurora-1: rgba(59, 130, 246, 0.28);
+    --aurora-2: rgba(168, 85, 247, 0.25);
+    --aurora-3: rgba(16, 185, 129, 0.20);
+    --glass-surface: rgba(17, 24, 39, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-shadow: 0 14px 36px -5px rgba(0, 0, 0, 0.45);
+    --input-bg: rgba(30, 41, 59, 0.85);
+    --text-primary: #F8FAFC;
+    --text-secondary: #CBD5E1;
+    --text-muted: #64748B;
+    --border-subtle: rgba(255, 255, 255, 0.1);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+    background-color: var(--bg-outer);
+    color: var(--text-primary);
+    line-height: 1.5;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+    transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+/* 모바일 웹뷰 컨테이너 + [차별화 #3] 살아 움직이는 오로라 메쉬 배경 */
+.toss-webview-shell {
+    width: 100%;
+    max-width: 480px;
+    min-height: 100vh;
+    background-color: var(--bg-shell);
+    background-image:
+        radial-gradient(at 10% 12%, var(--aurora-1) 0px, transparent 55%),
+        radial-gradient(at 90% 25%, var(--aurora-2) 0px, transparent 55%),
+        radial-gradient(at 50% 85%, var(--aurora-3) 0px, transparent 60%);
+    position: relative;
+    padding-bottom: 140px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+    overflow-x: hidden;
+    transition: background-color 0.35s ease;
+}
+
+/* TDS 상단 플로팅 토스트 알림 */
+.tds-toast {
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    transform: translate(-50%, -140%);
+    background: rgba(15, 23, 42, 0.95);
+    color: #FFFFFF;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(16px);
+    padding: 12px 22px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    z-index: 250;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    white-space: nowrap;
+}
+
+.tds-toast.show {
+    transform: translate(-50%, 0);
+}
+
+/* 상단 고정 리퀴드 글래스 헤더 */
+.toss-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--glass-surface);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.toss-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.toss-logo-badge {
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    color: #FFFFFF;
+    font-weight: 800;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px var(--accent-glow);
+}
+
+.toss-header-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.header-right-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.security-pill {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--toss-success);
+    background: var(--toss-success-bg);
+    padding: 5px 10px;
+    border-radius: 999px;
+}
+
+/* [차별화 #6] 라이트 / 스페이셜 다크 글래스 모드 토글 버튼 */
+.theme-toggle-btn {
+    border: 1px solid var(--border-subtle);
+    background: var(--glass-surface);
+    color: var(--text-primary);
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    font-size: 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s ease;
+}
+
+.theme-toggle-btn:active {
+    transform: scale(0.9);
+}
+
+/* [차별화 #1] iOS Dynamic Island Live Activity Capsule (확장형 플로팅 캡슐) */
+.dynamic-island-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 10px 16px 4px;
+}
+
+.dynamic-island-pill {
+    background: #090D16;
+    color: #FFFFFF;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 28px;
+    padding: 8px 16px;
+    width: 94%;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+    cursor: pointer;
+    transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    overflow: hidden;
+}
+
+.dynamic-island-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.island-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+}
+
+.ticker-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #00E682;
+    box-shadow: 0 0 10px #00E682;
+    flex-shrink: 0;
+    animation: pulseDot 1.4s infinite;
+}
+
+@keyframes pulseDot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+.ticker-message {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: opacity 0.25s ease;
+}
+
+.island-expand-hint {
+    font-size: 10px;
+    color: #94A3B8;
+    flex-shrink: 0;
+}
+
+.dynamic-island-expanded {
+    max-height: 0;
+    opacity: 0;
+    margin-top: 0;
+    transition: all 0.3s ease;
+    font-size: 11px;
+    color: #CBD5E1;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dynamic-island-pill.expanded {
+    padding: 12px 18px;
+    border-radius: 22px;
+}
+
+.dynamic-island-pill.expanded .dynamic-island-expanded {
+    max-height: 90px;
+    opacity: 1;
+    margin-top: 10px;
+    padding-top: 8px;
+}
+
+/* 세그먼트 컨트롤 탭 */
+.loop-switcher-bar {
+    padding: 8px 16px;
+}
+
+.segmented-track {
+    background: var(--glass-surface);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    padding: 4px;
+    border-radius: 16px;
+    display: flex;
+    gap: 4px;
+    box-shadow: var(--glass-shadow);
+}
+
+.loop-tab-btn {
+    flex: 1;
+    white-space: nowrap;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 9px 8px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.loop-tab-btn.active {
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    color: #FFFFFF;
+    font-weight: 800;
+    box-shadow: 0 4px 12px var(--accent-glow);
+}
+
+/* 3단계 퍼널 스텝 인디케이터 */
+.funnel-steps-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--glass-surface);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    padding: 11px 16px;
+    border-radius: 18px;
+    box-shadow: var(--glass-shadow);
+}
+
+.funnel-step-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.funnel-step-item.active {
+    color: var(--accent-primary);
+    font-weight: 800;
+}
+
+.funnel-step-item.done {
+    color: var(--toss-success);
+    font-weight: 700;
+}
+
+.step-num-circle {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--input-bg);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.funnel-step-item.active .step-num-circle {
+    background: var(--accent-primary);
+    color: #FFFFFF;
+}
+
+.funnel-step-item.done .step-num-circle {
+    background: var(--toss-success);
+    color: #FFFFFF;
+}
+
+.toss-main {
+    padding: 8px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* [차별화 #3] iOS Spatial Liquid Glass 카드 */
+.tds-card {
+    background: var(--glass-surface);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-card);
+    padding: 20px;
+    box-shadow: var(--glass-shadow);
+}
+
+/* [차별화 #2] Apple Bento Grid (비대칭 2열 모듈형 대시보드 레이아웃) */
+.bento-dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.bento-tile-wide {
+    grid-column: span 2;
+    background: var(--glass-surface);
+    backdrop-filter: blur(22px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-card);
+    padding: 20px;
+    box-shadow: var(--glass-shadow);
+}
+
+.bento-tile-half {
+    background: var(--glass-surface);
+    backdrop-filter: blur(22px);
+    border: 1px solid var(--glass-border);
+    border-radius: 22px;
+    padding: 15px 16px;
+    box-shadow: var(--glass-shadow);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.bento-tile-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.bento-tile-value {
+    font-size: 17px;
+    font-weight: 800;
+    color: var(--accent-primary);
+}
+
+.bento-tile-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.hero-top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.hero-badge {
+    display: inline-block;
+    background: rgba(49, 130, 246, 0.14);
+    color: var(--accent-primary);
+    font-size: 11px;
+    font-weight: 800;
+    padding: 5px 11px;
+    border-radius: 999px;
+}
+
+.diff-trend-tag {
+    font-size: 11px;
+    font-weight: 800;
+    color: #FFFFFF;
+    background: linear-gradient(135deg, #6366F1 0%, #EC4899 100%);
+    padding: 4px 10px;
+    border-radius: 999px;
+}
+
+.hero-title {
+    font-size: 21px;
+    font-weight: 800;
+    color: var(--text-primary);
+    letter-spacing: -0.4px;
+    line-height: 1.35;
+    margin-bottom: 6px;
+}
+
+.hero-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.env-status-banner {
+    margin-top: 12px;
+    background: var(--input-bg);
+    border: 1px dashed var(--border-subtle);
+    border-radius: 14px;
+    padding: 8px 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.env-status-banner strong {
+    color: var(--accent-primary);
+}
+
+/* 입력 폼 요소 스타일 */
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group:last-child {
+    margin-bottom: 0;
+}
+
+.form-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.tds-input,
+.tds-select {
+    width: 100%;
+    padding: 13px 15px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    background: var(--input-bg);
+    border: 1.5px solid var(--border-subtle);
+    border-radius: 14px;
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.tds-input:focus,
+.tds-select:focus {
+    border-color: var(--accent-primary);
+}
+
+.form-row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+/* [차별화 #4] Google Material 3 Expressive Shape-Morphing Chips */
+.chip-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tds-chip {
+    border: 1px solid var(--border-subtle);
+    background: var(--input-bg);
+    color: var(--text-secondary);
+    padding: 10px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 선택 시 알약(999px)에서 Material Expressive 스쿼클(14px)로 모핑 + 스프링 확대 */
+.tds-chip.selected {
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    color: #FFFFFF;
+    border-color: transparent;
+    border-radius: 14px;
+    transform: scale(1.03);
+    box-shadow: 0 6px 16px var(--accent-glow);
+}
+
+.loading-container {
+    text-align: center;
+    padding: 36px 20px;
+}
+
+.spinner-ring {
+    width: 48px;
+    height: 48px;
+    border: 5px solid rgba(99, 102, 241, 0.2);
+    border-top-color: var(--accent-primary);
+    border-radius: 50%;
+    margin: 0 auto 18px;
+    animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.score-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 10px;
+}
+
+.score-number {
+    font-size: 34px;
+    font-weight: 800;
+    color: var(--accent-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.progress-track {
+    width: 100%;
+    height: 12px;
+    background: var(--input-bg);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-primary) 0%, #00C471 100%);
+    border-radius: 999px;
+    transition: width 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* [차별화 #5] Apple Card Holographic Shimmer Paywall */
+.paywall-wrapper {
+    position: relative;
+    overflow: hidden;
+    border: 1.5px solid var(--glass-border);
+}
+
+.blurred-content {
+    filter: blur(7px);
+    user-select: none;
+    pointer-events: none;
+    transition: filter 0.5s ease;
+}
+
+.blurred-content.unlocked {
+    filter: blur(0);
+    user-select: auto;
+    pointer-events: auto;
+}
+
+.paywall-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.35) 0%, rgba(9, 13, 22, 0.96) 50%);
+    color: #FFFFFF;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 26px 22px;
+    text-align: center;
+    z-index: 10;
+}
+
+.lock-circle {
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #F59E0B 0%, #EC4899 50%, #6366F1 100%);
+    color: #FFFFFF;
+    font-size: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px;
+    box-shadow: 0 8px 24px rgba(236, 72, 153, 0.35);
+}
+
+.calendar-item {
+    padding: 14px;
+    border-radius: 16px;
+    margin-bottom: 10px;
+}
+
+.calendar-item.danger {
+    background: var(--toss-danger-bg);
+    border-left: 4px solid var(--toss-danger);
+}
+
+.calendar-item.lucky {
+    background: var(--toss-success-bg);
+    border-left: 4px solid var(--toss-success);
+}
+
+.calendar-day-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.calendar-day-title {
+    font-size: 15px;
+    font-weight: 800;
+}
+
+.calendar-tag {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+}
+
+.tag-danger { background: var(--toss-danger); color: #FFFFFF; }
+.tag-lucky { background: var(--toss-success); color: #FFFFFF; }
+
+.lucky-balls-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.lucky-ball {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: var(--toss-gold-bg);
+    border: 2px solid var(--toss-gold);
+    color: var(--toss-gold);
+    font-weight: 800;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 하단 고정 플로팅 바 + [차별화 #5] 홀로그래픽 쉬머 광택 CTA 버튼 */
+.sticky-bottom-bar {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    max-width: 480px;
+    background: linear-gradient(180deg, transparent 0%, var(--bg-shell) 35%);
+    padding: 12px 20px 20px;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.floating-nudge-bubble {
+    background: #0F172A;
+    color: #38BDF8;
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 999px;
+    margin-bottom: 8px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+    animation: nudgeBounce 1.8s ease-in-out infinite;
+}
+
+@keyframes nudgeBounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+}
+
+.tds-primary-btn {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    padding: 17px 20px;
+    border: none;
+    border-radius: var(--radius-btn);
+    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+    color: #FFFFFF;
+    font-size: 16px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 10px 24px var(--accent-glow);
+    transition: transform 0.15s ease;
+}
+
+/* 홀로그래픽 쉬머 대각선 빛 반사 효과 */
+.tds-primary-btn::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -120%;
+    width: 65%;
+    height: 100%;
+    background: linear-gradient(
+        115deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.36) 50%,
+        transparent 100%
+    );
+    animation: holographicSweep 3.2s infinite;
+}
+
+@keyframes holographicSweep {
+    0% { left: -120%; }
+    55%, 100% { left: 160%; }
+}
+
+.tds-primary-btn:active {
+    transform: scale(0.97);
+}
+
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.65);
+    backdrop-filter: blur(6px);
+    display: none;
+    justify-content: center;
+    align-items: flex-end;
+    z-index: 100;
+}
+
+.modal-backdrop.open {
+    display: flex;
+}
+
+.tosspay-sheet {
+    width: 100%;
+    max-width: 480px;
+    background: var(--bg-shell);
+    color: var(--text-primary);
+    border-top: 1px solid var(--glass-border);
+    border-radius: 28px 28px 0 0;
+    padding: 24px 22px 30px;
+    animation: slideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+.sheet-handle {
+    width: 42px;
+    height: 5px;
+    background: var(--text-muted);
+    border-radius: 999px;
+    margin: 0 auto 18px;
+}
+
+.receipt-box {
+    background: var(--input-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 16px;
+    padding: 16px;
+    margin: 16px 0;
+}
+
+.receipt-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    margin-bottom: 10px;
+    color: var(--text-secondary);
+}
+
+.receipt-row.total {
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 12px;
+    margin-bottom: 0;
+    font-size: 17px;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.hidden {
+    display: none !important;
+}

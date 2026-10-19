@@ -1,0 +1,13 @@
+{
+  "name": "toss-miniapp-app2-refund-radar",
+  "version": "1.0.0",
+  "description": "안티그래비티 제2호 토스 유료 미니앱 - 환급레이더 AI (숨은 병원비·건보료·통신비 환급금 스캐너)",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "qa": "node scripts/qa-auditor.js",
+    "deploy": "node scripts/toss-deploy-agent.js"
+  },
+  "author": "TOSS_PARTNER_CHUNHAK_APP2",
+  "license": "MIT"
+}

@@ -1,0 +1,1049 @@
+/**
+ * ============================================================================
+ * 파일명: frontend/styles/tds-glow.css
+ * 역할: [MuseGlow AI v5.0 - 4대 전문 서브에이전트 합동 프로덕션 스타일시트]
+ *       1. 🥇 app-business-evaluator: 전환율 10.7% Hard Paywall + 21일 장기 체험 2단 가격 앵커링 + 크레딧 캡슐
+ *       2. 🥈 top-tier-app-consultant: 4주 회복 이원화 비교 곡선(SOS 적용 vs 방치 노화) + 골든타임 타이머
+ *       3. 🥉 cross-store-design-differentiator: Material 3 Expressive 모핑 + iOS Spatial Liquid Glass +
+ *          Holographic Shimmer VIP 배지 + AI 추구미 포토 스튜디오 Before/After 비교 슬라이더 & 4대 룩북 카드
+ *       4. 🏅 toss-top10-design-benchmarker: 실시간 소셜 프루프 라이브 티커(3.5초 롤링) + 슬롯머신 카운트업 +
+ *          인스타/카톡 공유용 크림 화이트 감성 처방 영수증 모달(Viral Receipt Card) + 스프링 바텀시트
+ * ============================================================================
+ */
+
+:root {
+    --bg-primary: #110c17;
+    --bg-secondary: #1b1326;
+    --glass-surface: rgba(33, 23, 46, 0.72);
+    --glass-surface-elevated: rgba(48, 33, 66, 0.86);
+    --glass-border: rgba(255, 214, 232, 0.16);
+    --glass-highlight: rgba(255, 255, 255, 0.25);
+
+    --text-primary: #fdf8fa;
+    --text-secondary: #d8c6d4;
+    --text-muted: #9e889a;
+
+    --accent-main: #f43f5e;
+    --accent-sub: #ec4899;
+    --accent-gold: #f59e0b;
+    --accent-mint: #10b981;
+    --accent-glow: rgba(244, 63, 94, 0.35);
+
+    --toss-blue: #3182f6;
+    --radius-xl: 26px;
+    --radius-lg: 20px;
+    --radius-md: 14px;
+    --radius-pill: 999px;
+    --spring-easing: cubic-bezier(0.22, 1, 0.36, 1);
+    --overshoot-easing: cubic-bezier(0.175, 0.885, 0.32, 1.12);
+}
+
+body[data-theme="light"] {
+    --bg-primary: #fdf9f8;
+    --bg-secondary: #f9eff2;
+    --glass-surface: rgba(255, 255, 255, 0.86);
+    --glass-surface-elevated: rgba(255, 248, 250, 0.96);
+    --glass-border: rgba(244, 63, 94, 0.18);
+    --glass-highlight: rgba(255, 255, 255, 0.9);
+
+    --text-primary: #1e131a;
+    --text-secondary: #57414d;
+    --text-muted: #8c7381;
+}
+
+body[data-mode="SKIN_SCANNER_STUDIO"] {
+    --accent-main: #10b981;
+    --accent-sub: #ec4899;
+    --accent-glow: rgba(16, 185, 129, 0.35);
+}
+
+body[data-mode="SLOW_AGING_LOOP"] {
+    --accent-main: #a855f7;
+    --accent-sub: #06b6d4;
+    --accent-glow: rgba(168, 85, 247, 0.35);
+}
+
+body[data-mode="HORMONE_DIET"] {
+    --accent-main: #fb7185;
+    --accent-sub: #f97316;
+    --accent-glow: rgba(251, 113, 133, 0.35);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    font-family: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.55;
+    min-height: 100vh;
+    overflow-x: hidden;
+    transition: background-color 0.45s var(--spring-easing), color 0.35s ease;
+}
+
+.aurora-backdrop {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+}
+
+.aurora-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(85px);
+    opacity: 0.42;
+    animation: floatOrb 12s infinite alternate ease-in-out;
+}
+
+.orb-rose {
+    width: 320px;
+    height: 320px;
+    background: radial-gradient(circle, var(--accent-main), transparent 70%);
+    top: -80px;
+    left: -60px;
+}
+
+.orb-champagne {
+    width: 280px;
+    height: 280px;
+    background: radial-gradient(circle, var(--accent-sub), transparent 70%);
+    top: 28%;
+    right: -70px;
+    animation-delay: -4s;
+}
+
+.orb-gold {
+    width: 260px;
+    height: 260px;
+    background: radial-gradient(circle, #f59e0b, transparent 70%);
+    bottom: 8%;
+    left: 10%;
+    animation-delay: -7s;
+}
+
+@keyframes floatOrb {
+    0% { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(22px, -28px) scale(1.12); }
+}
+
+.miniapp-shell {
+    position: relative;
+    z-index: 1;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 14px 16px 130px;
+}
+
+/* iOS Dynamic Island 라이브 뷰티 컨시어지 캡슐 */
+.dynamic-island-wrap {
+    position: sticky;
+    top: 10px;
+    z-index: 40;
+    display: flex;
+    justify-content: center;
+    margin-bottom: 10px;
+}
+
+.dynamic-island {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    border-radius: var(--radius-pill);
+    background: rgba(14, 9, 20, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35), 0 0 18px var(--accent-glow);
+    transition: transform 0.35s var(--spring-easing);
+}
+
+.dynamic-island.pulse {
+    transform: scale(1.04);
+}
+
+.island-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-main);
+    box-shadow: 0 0 10px var(--accent-main);
+    animation: blinkDot 1.8s infinite;
+}
+
+@keyframes blinkDot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.8); }
+}
+
+/* [toss-top10-design-benchmarker] 실시간 소셜 프루프 라이브 티커 (3.5초 롤링) */
+.live-social-ticker-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    padding: 0 14px;
+    margin-bottom: 12px;
+    border-radius: var(--radius-pill);
+    background: var(--glass-surface-elevated);
+    border: 1px solid rgba(244, 63, 94, 0.32);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    overflow: hidden;
+}
+
+.live-badge-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: var(--radius-pill);
+    background: rgba(244, 63, 94, 0.22);
+    color: #fda4af;
+    font-size: 10px;
+    font-weight: 900;
+    flex-shrink: 0;
+}
+
+.live-ticker-text {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: transform 0.45s var(--spring-easing), opacity 0.45s var(--spring-easing);
+}
+
+.live-ticker-text.slide-out {
+    transform: translateY(-14px);
+    opacity: 0;
+}
+
+/* 상단 바 */
+.top-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.brand-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    font-weight: 800;
+    padding: 6px 11px;
+    border-radius: var(--radius-pill);
+    background: var(--glass-surface);
+    border: 1px solid var(--glass-border);
+    color: var(--accent-main);
+}
+
+.credit-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 800;
+    padding: 6px 11px;
+    border-radius: var(--radius-pill);
+    background: rgba(245, 158, 11, 0.16);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    color: #fbbf24;
+}
+
+body[data-theme="light"] .credit-pill {
+    color: #b45309;
+}
+
+.biz-eval-btn,
+.theme-toggle-btn {
+    cursor: pointer;
+    padding: 6px 10px;
+    border-radius: var(--radius-pill);
+    background: var(--glass-surface);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    font-size: 11.5px;
+    font-weight: 700;
+    transition: all 0.25s ease;
+}
+
+.biz-eval-btn {
+    border-color: rgba(16, 185, 129, 0.45);
+    color: #34d399;
+}
+
+body[data-theme="light"] .biz-eval-btn {
+    color: #047857;
+}
+
+/* 히어로 카드 */
+.hero-glass-card {
+    background: var(--glass-surface);
+    border: 1px solid var(--glass-border);
+    box-shadow: inset 0 1px 1px var(--glass-highlight), 0 16px 40px rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(26px);
+    -webkit-backdrop-filter: blur(26px);
+    border-radius: var(--radius-xl);
+    padding: 20px;
+    margin-bottom: 16px;
+}
+
+.viral-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.viral-tag {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: var(--radius-pill);
+    background: rgba(244, 63, 94, 0.16);
+    color: #fda4af;
+    border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+body[data-theme="light"] .viral-tag {
+    background: rgba(244, 63, 94, 0.1);
+    color: #be123c;
+}
+
+.click-magnet-title {
+    font-size: 20.5px;
+    font-weight: 800;
+    line-height: 1.36;
+    letter-spacing: -0.02em;
+    margin-bottom: 10px;
+    word-break: keep-all;
+}
+
+.gradient-highlight {
+    background: linear-gradient(135deg, #fb7185 0%, #f43f5e 45%, #f59e0b 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.hero-subcopy {
+    font-size: 13px;
+    color: var(--text-secondary);
+    word-break: keep-all;
+}
+
+/* 4대 모드 모핑 바 */
+.mode-morph-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.mode-chip {
+    cursor: pointer;
+    padding: 11px 6px;
+    border-radius: 16px;
+    background: var(--glass-surface);
+    border: 1px solid var(--glass-border);
+    color: var(--text-secondary);
+    font-size: 11.5px;
+    font-weight: 700;
+    text-align: center;
+    transition: all 0.35s var(--spring-easing);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.mode-chip .chip-emoji {
+    font-size: 18px;
+}
+
+.mode-chip.active {
+    border-radius: 24px;
+    background: linear-gradient(135deg, var(--accent-main), var(--accent-sub));
+    color: #ffffff;
+    border-color: transparent;
+    box-shadow: 0 8px 22px var(--accent-glow);
+    transform: translateY(-2px);
+}
+
+/* 공통 섹션 카드 */
+.glass-section-card {
+    background: var(--glass-surface);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-radius: var(--radius-xl);
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+    gap: 8px;
+}
+
+.section-title {
+    font-size: 15.5px;
+    font-weight: 800;
+}
+
+.security-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: var(--radius-pill);
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+body[data-theme="light"] .security-badge {
+    color: #047857;
+}
+
+.form-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.field-group label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: 5px;
+}
+
+.tds-input,
+.tds-select {
+    width: 100%;
+    padding: 11px 14px;
+    border-radius: var(--radius-md);
+    background: var(--glass-surface-elevated);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    font-size: 13.5px;
+    font-weight: 600;
+    outline: none;
+}
+
+.submit-diagnose-btn {
+    width: 100%;
+    margin-top: 6px;
+    padding: 15px 18px;
+    border: none;
+    border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, var(--accent-main) 0%, var(--accent-sub) 100%);
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 10px 26px var(--accent-glow);
+    transition: transform 0.2s ease;
+}
+
+.submit-diagnose-btn:active {
+    transform: scale(0.98);
+}
+
+/* [App Business Evaluator Override] 전면 하드 페이월(Hard Paywall) 카드 */
+.hard-paywall-card {
+    background: linear-gradient(160deg, rgba(244, 63, 94, 0.2), rgba(27, 19, 38, 0.95));
+    border: 2px solid var(--accent-main);
+    border-radius: var(--radius-xl);
+    padding: 22px 18px;
+    margin-bottom: 18px;
+    box-shadow: 0 16px 45px rgba(244, 63, 94, 0.28);
+}
+
+body[data-theme="light"] .hard-paywall-card {
+    background: linear-gradient(160deg, rgba(244, 63, 94, 0.12), rgba(255, 255, 255, 0.96));
+}
+
+.loss-warning-box {
+    background: rgba(244, 63, 94, 0.16);
+    border: 1px solid rgba(244, 63, 94, 0.4);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    margin: 12px 0;
+}
+
+.plan-selector-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 14px 0;
+}
+
+.plan-option-card {
+    cursor: pointer;
+    padding: 14px 16px;
+    border-radius: var(--radius-lg);
+    background: var(--glass-surface-elevated);
+    border: 2px solid var(--glass-border);
+    transition: all 0.25s ease;
+    position: relative;
+}
+
+.plan-option-card.selected {
+    border-color: var(--accent-gold);
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(244, 63, 94, 0.14));
+    box-shadow: 0 0 22px rgba(245, 158, 11, 0.28);
+}
+
+.plan-recommend-ribbon {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 800;
+    padding: 3px 9px;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(135deg, #f59e0b, #f43f5e);
+    color: #fff;
+    margin-bottom: 6px;
+}
+
+/* Apple Bento Grid (잠금 해제 후 공개) */
+.bento-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.bento-tile {
+    background: var(--glass-surface);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+}
+
+.bento-hero,
+.bento-wide {
+    grid-column: span 2;
+}
+
+.bento-hero {
+    background: linear-gradient(145deg, rgba(244, 63, 94, 0.16), rgba(168, 85, 247, 0.12));
+    border: 1px solid rgba(244, 63, 94, 0.35);
+}
+
+.aura-badge-pill {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: var(--radius-pill);
+    background: rgba(245, 158, 11, 0.18);
+    color: #fbbf24;
+    margin-bottom: 8px;
+}
+
+.aura-main-title {
+    font-size: 18px;
+    font-weight: 800;
+    margin-bottom: 10px;
+}
+
+.hero-score-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding-top: 10px;
+    border-top: 1px solid var(--glass-border);
+}
+
+.score-circle {
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--glass-surface-elevated) 62%, transparent 63%),
+                conic-gradient(var(--accent-main) 0deg, var(--accent-sub) 280deg, rgba(255,255,255,0.1) 280deg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.score-num {
+    font-size: 21px;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+}
+
+.score-unit {
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+.waste-amount {
+    font-size: 20px;
+    font-weight: 900;
+    color: #fbbf24;
+    font-variant-numeric: tabular-nums;
+}
+
+.metric-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    margin-top: 8px;
+}
+
+.metric-label-line {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.metric-track {
+    width: 100%;
+    height: 8px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+}
+
+.metric-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--accent-main), var(--accent-sub));
+    width: 0%;
+    transition: width 0.8s var(--spring-easing);
+}
+
+/* [Nir Eyal Hook 4단계] 주 3회 스탬프 & 가변 보상 & 파우치 금고 */
+.stamp-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin: 10px 0 14px;
+}
+
+.stamp-box {
+    padding: 10px;
+    border-radius: var(--radius-md);
+    background: var(--glass-surface-elevated);
+    border: 1px dashed var(--glass-border);
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+
+.stamp-box.done {
+    border-style: solid;
+    border-color: #10b981;
+    background: rgba(16, 185, 129, 0.16);
+    color: #34d399;
+}
+
+.prescription-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.prescription-card {
+    background: var(--glass-surface-elevated);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+}
+
+.prescription-card h4 {
+    font-size: 14.5px;
+    font-weight: 800;
+    color: var(--accent-main);
+    margin-bottom: 8px;
+}
+
+.prescription-card p,
+.prescription-card li {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.prescription-card ul {
+    padding-left: 18px;
+}
+
+.warning-callout {
+    margin-top: 8px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(244, 63, 94, 0.14);
+    border: 1px solid rgba(244, 63, 94, 0.35);
+    color: #fda4af;
+    font-size: 12.5px;
+    font-weight: 700;
+}
+
+/* 모달 (스프링 바텀시트) */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(6px);
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+}
+
+.modal-backdrop.open {
+    display: flex;
+}
+
+.toss-bottom-sheet {
+    width: 100%;
+    max-width: 480px;
+    max-height: 88vh;
+    overflow-y: auto;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--glass-border);
+    border-radius: 28px 28px 0 0;
+    padding: 22px 20px 30px;
+    animation: sheetSpringUp 0.42s var(--overshoot-easing);
+}
+
+@keyframes sheetSpringUp {
+    0% { transform: translateY(100%); }
+    100% { transform: translateY(0); }
+}
+
+.sheet-handle {
+    width: 42px;
+    height: 5px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.25);
+    margin: 0 auto 14px;
+}
+
+.toss-pay-confirm-btn {
+    width: 100%;
+    padding: 15px;
+    border: none;
+    border-radius: var(--radius-md);
+    background: var(--toss-blue);
+    color: #fff;
+    font-size: 15.5px;
+    font-weight: 800;
+    cursor: pointer;
+    margin-top: 14px;
+    transition: transform 0.15s ease;
+}
+
+.toss-pay-confirm-btn:active {
+    transform: scale(0.97);
+}
+
+.json-viewer-pre {
+    background: #0b0811;
+    color: #a7f3d0;
+    padding: 12px;
+    border-radius: 12px;
+    font-size: 11.5px;
+    overflow-x: auto;
+    line-height: 1.45;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+/* ==========================================================================
+   [CROSS-STORE DESIGN SPEC v5.0 & TOSS TOP 10 MICRO-INTERACTIONS]
+   1. Holographic Shimmer VIP Badge & Card
+   2. AI Chugumi Photo Studio (Before/After Slider & 4 Lookbook Cards)
+   3. 4-Week Barrier Recovery Interactive Progress Bar
+   4. Viral Receipt Card (Cream White Paper Receipt with Barcode & Stamp)
+   ========================================================================== */
+
+@keyframes holoShimmerSweep {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.holo-shimmer-badge {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 11px;
+    border-radius: var(--radius-pill);
+    font-size: 11px;
+    font-weight: 800;
+    color: #fff;
+    background: linear-gradient(
+        110deg,
+        #f43f5e 0%,
+        #f59e0b 28%,
+        #fef08a 48%,
+        #a855f7 72%,
+        #f43f5e 100%
+    );
+    background-size: 220% 100%;
+    animation: holoShimmerSweep 3.6s linear infinite;
+    box-shadow: 0 4px 15px rgba(244, 63, 94, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+}
+
+.holo-shimmer-card {
+    position: relative;
+    overflow: hidden;
+}
+
+.holo-shimmer-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        125deg,
+        transparent 30%,
+        rgba(255, 255, 255, 0.14) 48%,
+        rgba(251, 191, 36, 0.18) 52%,
+        transparent 70%
+    );
+    background-size: 250% 100%;
+    animation: holoShimmerSweep 5s ease-in-out infinite;
+    pointer-events: none;
+}
+
+/* AI 추구미 포토 스튜디오: Before/After 비교 슬라이더 & 4대 룩북 카드 */
+.chugumi-studio-stage {
+    position: relative;
+    border-radius: 20px;
+    overflow: hidden;
+    aspect-ratio: 4 / 3;
+    max-height: 290px;
+    background: #0d0914;
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+    user-select: none;
+}
+
+.studio-img-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: filter 0.45s var(--spring-easing), transform 0.45s var(--spring-easing);
+}
+
+.studio-after-wrapper {
+    position: absolute;
+    inset: 0;
+    width: 58%;
+    overflow: hidden;
+    border-right: 2.5px solid #fff;
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.45);
+}
+
+.vibe-filter-SILK_OLD_MONEY {
+    filter: brightness(1.08) contrast(1.06) saturate(1.12) sepia(0.08) drop-shadow(0 0 12px rgba(245, 158, 11, 0.3));
+}
+.vibe-filter-DEWY_CLEAN_GIRL {
+    filter: brightness(1.14) contrast(0.98) saturate(1.22) hue-rotate(-6deg);
+}
+.vibe-filter-CHIC_SIREN_CAT {
+    filter: brightness(1.02) contrast(1.22) saturate(0.92) hue-rotate(8deg);
+}
+.vibe-filter-MOCHA_MOUSSE_LUXE {
+    filter: brightness(1.05) contrast(1.08) saturate(1.05) sepia(0.22) hue-rotate(-10deg);
+}
+
+.studio-compare-badge {
+    position: absolute;
+    top: 12px;
+    padding: 4px 10px;
+    border-radius: var(--radius-pill);
+    font-size: 10.5px;
+    font-weight: 800;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    z-index: 5;
+}
+.studio-compare-badge.before {
+    right: 12px;
+    background: rgba(15, 23, 42, 0.72);
+    color: #cbd5e1;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.studio-compare-badge.after {
+    left: 12px;
+    background: rgba(244, 63, 94, 0.85);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.studio-slider-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: ew-resize;
+    z-index: 10;
+}
+
+.studio-lookbook-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 9px;
+    margin-top: 12px;
+}
+
+.lookbook-card {
+    cursor: pointer;
+    padding: 11px 12px;
+    border-radius: 16px;
+    background: var(--glass-surface-elevated);
+    border: 1.5px solid var(--glass-border);
+    color: var(--text-primary);
+    text-align: left;
+    transition: all 0.3s var(--spring-easing);
+    position: relative;
+    overflow: hidden;
+}
+
+.lookbook-card.active {
+    border-color: var(--accent-main);
+    background: linear-gradient(135deg, rgba(244, 63, 94, 0.2), rgba(168, 85, 247, 0.14));
+    box-shadow: 0 8px 20px var(--accent-glow);
+    transform: translateY(-2px);
+}
+
+/* 4주 회복 인터랙티브 프로그레스 바 */
+.recovery-interactive-bar-wrap {
+    margin: 10px 0 14px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.65);
+    border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.recovery-progress-track {
+    position: relative;
+    width: 100%;
+    height: 12px;
+    border-radius: var(--radius-pill);
+    background: rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+    margin: 8px 0 10px;
+}
+
+.recovery-progress-fill {
+    height: 100%;
+    width: 100%;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(90deg, #f59e0b 0%, #10b981 55%, #34d399 100%);
+    box-shadow: 0 0 14px rgba(52, 211, 153, 0.6);
+    transition: width 0.55s var(--spring-easing);
+}
+
+.recovery-week-steps {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+}
+
+.recovery-week-pill {
+    cursor: pointer;
+    padding: 6px 4px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 800;
+    text-align: center;
+    transition: all 0.25s var(--spring-easing);
+}
+
+.recovery-week-pill.active {
+    background: rgba(16, 185, 129, 0.24);
+    border-color: #34d399;
+    color: #6ee7b7;
+    transform: scale(1.03);
+}
+
+/* [toss-top10-design-benchmarker & top-tier-app-consultant] 크림 화이트 추구미 처방 영수증 카드 */
+.viral-receipt-paper {
+    background: #fffdf9;
+    color: #1e1926;
+    border-radius: 16px;
+    padding: 20px 18px;
+    font-family: 'Courier New', 'Pretendard', monospace;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+    border-top: 6px dashed #e2d9d0;
+    border-bottom: 6px dashed #e2d9d0;
+    position: relative;
+}
+
+.receipt-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    padding: 6px 0;
+    border-bottom: 1px dashed #d1d6db;
+}
+
+.receipt-barcode {
+    height: 34px;
+    margin-top: 12px;
+    background: repeating-linear-gradient(
+        90deg,
+        #1e1926 0px,
+        #1e1926 2px,
+        transparent 2px,
+        transparent 5px,
+        #1e1926 5px,
+        #1e1926 9px,
+        transparent 9px,
+        transparent 12px
+    );
+}
+
+.receipt-rosegold-stamp {
+    position: absolute;
+    right: 16px;
+    bottom: 58px;
+    padding: 6px 10px;
+    border: 2px solid #e11d48;
+    border-radius: 999px;
+    color: #e11d48;
+    font-size: 11px;
+    font-weight: 900;
+    transform: rotate(-12deg);
+    background: rgba(255, 241, 242, 0.88);
+}
+
+.hidden {
+    display: none !important;
+}

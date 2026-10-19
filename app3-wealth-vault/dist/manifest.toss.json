@@ -1,0 +1,18 @@
+{
+  "platform": "Toss Mini-App Partner Console (Automated CLI Bridge v3.0)",
+  "uploadStatus": "SUCCESS",
+  "appSequence": "APP #3 (WealthVault AI)",
+  "qaAuditScore": 100,
+  "bundleChecksum": "sha256:a16923feb61c",
+  "appId": "toss-miniapp-wealthvault-a16923",
+  "draftVersion": "v1.0.0-rc.1",
+  "appTitle": "웰스볼트 AI : 은행·증권·부동산·동산·보험 통합 자산 & 임대/금융소득 절세 스캐너",
+  "webviewEndpoint": "http://localhost:3002",
+  "dynamicEnvironmentBinding": {
+    "configuredPriceKRW": 3900,
+    "maskedOwnerId": "TOS****P3",
+    "maskedUserIdentity": "이춘학****스랩",
+    "encryptionStandard": "AES-256-GCM"
+  },
+  "deployedAt": "2026-10-18T14:33:39.825Z"
+}
