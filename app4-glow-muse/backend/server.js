@@ -33,6 +33,21 @@ const {
     simulateChugumiPhotoStudio,
     getBusinessEvaluatorReport
 } = require('./services/glowEngine');
+// [실제 AI 연동] LLM/Vision 게이트웨이 & 프롬프트·병합 계층
+const { getAiStatus } = require('./services/aiProvider');
+const { runAiSkinScan, runAiReport } = require('./services/aiEnrichment');
+// [실제 결제 연동] 토스페이먼츠 주문 생성·승인·취소 게이트웨이
+const {
+    createOrder,
+    confirmPayment,
+    cancelPayment,
+    getOrder,
+    getRawOrder,
+    markOrderPaid,
+    getPaymentStatus,
+    resolvePlan,
+    ORDER_STATUS
+} = require('./services/paymentGateway');
 
 // 인메모리 보안 원장 (Supabase 001~005 테이블과 1:1 매핑)
 const encryptedDiagnosisStore = new Map();
@@ -85,6 +100,41 @@ function parseJsonBody(req) {
     });
 }
 
+/**
+ * [AI 리포트 대기 헬퍼]
+ * 온보딩 진단 시 백그라운드에서 미리 생성 중인 AI 리포트를 최대 timeoutMs 동안 대기합니다.
+ * - 이미 생성 완료 → 즉시 반환
+ * - 시간 초과/실패 → 결정론적 기본 리포트 반환 (사용자를 절대 대기시키지 않음)
+ * @param {Object} record 진단 세션 레코드
+ * @param {number} timeoutMs 최대 대기 시간
+ */
+async function waitForAiEnrichment(record, timeoutMs = 12000) {
+    if (record.aiEnrichment) {
+        return record.aiEnrichment;
+    }
+
+    const fallbackEnrichment = {
+        report: decryptSensitiveData(record.encryptedFullReport),
+        aiMeta: { applied: false, fallbackUsed: true }
+    };
+
+    if (!record.aiEnrichmentPromise) {
+        return fallbackEnrichment;
+    }
+
+    const timeoutPromise = new Promise((resolve) => {
+        setTimeout(() => resolve({
+            ...fallbackEnrichment,
+            aiMeta: {
+                ...fallbackEnrichment.aiMeta,
+                error: `AI 응답 대기 시간 초과(${timeoutMs}ms) — 기본 리포트를 제공합니다.`
+            }
+        }), timeoutMs);
+    });
+
+    return Promise.race([record.aiEnrichmentPromise, timeoutPromise]);
+}
+
 async function handleRequest(req, res) {
     const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname;
@@ -123,6 +173,10 @@ async function handleRequest(req, res) {
             appOwnerIdMasked: config.appOwnerIdMasked,
             settlementHolderMasked: config.settlementHolderMasked,
             securityProtocol: 'AES-256-GCM',
+            // [실제 AI 연동 상태] 클라이언트가 "진짜 AI 분석인지 / 목업인지" 표시할 수 있도록 노출
+            ai: getAiStatus(),
+            // [실제 결제 연동 상태] TOSS_LIVE면 결제위젯, 아니면 샌드박스 시뮬레이션
+            payments: getPaymentStatus(),
             creditCostMatrix: {
                 initialDiagnosis: 10,
                 dailyCheckin: 2,
@@ -168,9 +222,20 @@ async function handleRequest(req, res) {
                 }
             }
 
-            const scanResult = analyzeSkinBarrierScan(rawImageInput, userAge);
+            // 1단계: 기존 결정론적 엔진으로 즉시 결과 생성 (AI 실패 시 그대로 사용)
+            const baseScanResult = analyzeSkinBarrierScan(rawImageInput, userAge);
+
+            // 2단계: [실제 AI Vision 분석] AI 키가 설정된 경우에만 호출 (실패/미설정 시 자동 폴백)
+            const aiScan = await runAiSkinScan({
+                imageBase64: rawImageInput,
+                userAge,
+                skinConcern: body.skinConcern,
+                baseResult: baseScanResult
+            });
+            const scanResult = aiScan.result;
 
             // 개인정보 보호(규칙 8): 원본 사진 데이터는 즉시 참조 해제하여 메모리 파기 보장
+            // (AI 추론에 사용된 경우에도 원본은 디스크·DB에 저장되지 않고 요청 종료 시 폐기됩니다)
             delete body.imageBase64;
 
             const scanId = 'skin_' + crypto.randomBytes(12).toString('hex');
@@ -195,7 +260,10 @@ async function handleRequest(req, res) {
                 scanId,
                 creditsDeducted,
                 remainingCredits,
-                privacyGuarantee: 'RAW_PHOTO_DISCARDED_AES256_ENCRYPTED'
+                ai: aiScan.aiMeta,
+                privacyGuarantee: aiScan.aiMeta.applied
+                    ? 'RAW_PHOTO_AI_INFERENCE_ONLY_THEN_DISCARDED_AES256_ENCRYPTED'
+                    : 'RAW_PHOTO_DISCARDED_AES256_ENCRYPTED'
             });
         } catch (err) {
             sendJson(res, 400, { status: 'ERROR', message: err.message });
@@ -228,7 +296,7 @@ async function handleRequest(req, res) {
             const analysis = analyzeGlowMuseProfile(sensitiveProfile);
             const sessionToken = 'glow_' + crypto.randomBytes(16).toString('hex');
 
-            encryptedDiagnosisStore.set(sessionToken, {
+            const record = {
                 sessionToken,
                 encryptedProfile: encryptedBundle,
                 hardPaywallTeaser: analysis.hardPaywallTeaser,
@@ -238,7 +306,30 @@ async function handleRequest(req, res) {
                 remainingCredits: 0,
                 weeklyCheckinCount: 0,
                 encryptedPouchVault: [],
+                aiStatus: 'PENDING',
+                aiEnrichment: null,
                 createdAt: new Date().toISOString()
+            };
+
+            encryptedDiagnosisStore.set(sessionToken, record);
+
+            // [실제 AI 리포트 생성] 사용자가 결제를 고민하는 동안 백그라운드에서 미리 생성합니다.
+            // - 결제 직후 즉시 제공되어 TTV(Time To Value) 3분 규칙을 지킵니다.
+            // - AI 실패·미설정 시 결정론적 리포트가 그대로 사용됩니다(무중단 폴백).
+            record.aiEnrichmentPromise = runAiReport({
+                profile: sensitiveProfile,
+                baseReport: analysis.unlockedFullReport
+            }).then(({ report, aiMeta }) => {
+                record.aiEnrichment = { report, aiMeta };
+                record.aiStatus = aiMeta.applied ? 'AI_READY' : 'FALLBACK_READY';
+                return record.aiEnrichment;
+            }).catch((err) => {
+                record.aiEnrichment = {
+                    report: analysis.unlockedFullReport,
+                    aiMeta: { applied: false, fallbackUsed: true, error: err.message }
+                };
+                record.aiStatus = 'FALLBACK_READY';
+                return record.aiEnrichment;
             });
 
             sendJson(res, 200, {
@@ -271,7 +362,11 @@ async function handleRequest(req, res) {
                     },
                     appOwnerIdMasked: config.appOwnerIdMasked
                 },
-                hardPaywallTeaser: analysis.hardPaywallTeaser
+                hardPaywallTeaser: analysis.hardPaywallTeaser,
+                ai: {
+                    ...getAiStatus(),
+                    reportStatus: record.aiStatus
+                }
             });
         } catch (err) {
             sendJson(res, 400, { status: 'ERROR', message: err.message });
@@ -281,41 +376,159 @@ async function handleRequest(req, res) {
 
     // ------------------------------------------------------------------------
     // [API 5] POST /api/payment/unlock
+    // 역할: [토스페이먼츠 실결제 승인 기반 하드 페이월 해제]
+    //   - TOSS_LIVE 모드 : 클라이언트가 결제위젯 인증 후 받은 paymentKey/orderId를
+    //                      서버가 토스페이먼츠 /v1/payments/confirm 으로 최종 승인합니다.
+    //                      금액은 .env 서버 설정값과 1원 단위로 재검증합니다.
+    //   - SANDBOX_SIMULATION 모드 : 키 미설정 시 기존 데모 흐름(금액 일치 검증)으로 동작합니다.
+    //   - 결제 완료 직전 백그라운드에서 미리 생성해 둔 AI 리포트를 즉시 제공합니다.
     // ------------------------------------------------------------------------
     if (req.method === 'POST' && pathname === '/api/payment/unlock') {
         try {
             const body = await parseJsonBody(req);
-            const { sessionToken, paidAmount, planTier } = body;
+            const { sessionToken, paidAmount, planTier, paymentKey, orderId } = body;
             const config = getDynamicConfig();
+            const paymentMode = config.payments.mode;
 
             if (!sessionToken || !encryptedDiagnosisStore.has(sessionToken)) {
                 sendJson(res, 404, { status: 'ERROR', message: '유효하지 않은 진단 세션입니다. 먼저 온보딩 스캔을 실행해 주세요.' });
                 return;
             }
 
-            const numericPaid = Number(paidAmount);
-            const isVipPlan = planTier === 'VIP_ANNUAL' || numericPaid === config.vipAnnualPrice;
-            const isStarterPlan = planTier === 'STARTER_PACK' || numericPaid === config.monetizationPrice;
+            const record = encryptedDiagnosisStore.get(sessionToken);
 
-            if (!isVipPlan && !isStarterPlan) {
-                sendJson(res, 400, {
-                    status: 'PRICE_MISMATCH',
-                    message: `결제 요청 금액(${numericPaid}원)이 서버 환경변수 설정 금액(VIP 연간: ${config.vipAnnualPrice}원 / 스타터 팩: ${config.monetizationPrice}원)과 일치하지 않습니다.`
+            let resolvedPlanTier = null;
+            let appliedPrice = 0;
+            let grantedCredits = 0;
+            let tossReceipt = null;
+            let usedOrderId = orderId || null;
+            let alreadyPaid = false;
+
+            if (paymentMode === 'TOSS_LIVE') {
+                // ----------------------------------------------------------------
+                // [실결제 경로] 서버가 금액을 확정한 주문으로만 승인합니다.
+                // ----------------------------------------------------------------
+                if (!paymentKey || !orderId) {
+                    sendJson(res, 400, {
+                        status: 'TOSS_CONFIRM_REQUIRED',
+                        message: '토스페이먼츠 결제 인증 정보(paymentKey, orderId)가 필요합니다.'
+                    });
+                    return;
+                }
+
+                const order = getRawOrder(orderId);
+                if (!order) {
+                    sendJson(res, 404, { status: 'ORDER_NOT_FOUND', message: '존재하지 않는 주문입니다. 결제를 다시 시작해 주세요.' });
+                    return;
+                }
+
+                if (order.sessionToken !== sessionToken) {
+                    sendJson(res, 403, { status: 'SESSION_ORDER_MISMATCH', message: '주문과 진단 세션이 일치하지 않습니다.' });
+                    return;
+                }
+
+                if (order.status === ORDER_STATUS.PAID) {
+                    // 이미 승인 완료된 주문: 크레딧 이중 지급 방지(멱등성 보장)
+                    alreadyPaid = true;
+                    tossReceipt = order.tossReceipt;
+                } else {
+                    const confirmResult = await confirmPayment({
+                        paymentKey,
+                        orderId,
+                        amount: order.amountKrw
+                    });
+
+                    if (!confirmResult.ok) {
+                        sendJson(res, 402, {
+                            status: 'PAYMENT_CONFIRM_FAILED',
+                            code: confirmResult.code || 'CONFIRM_ERROR',
+                            message: confirmResult.error
+                        });
+                        return;
+                    }
+
+                    tossReceipt = confirmResult.receipt;
+                }
+
+                resolvedPlanTier = order.planTier;
+                appliedPrice = order.amountKrw;
+                grantedCredits = order.creditsGranted;
+            } else {
+                // ----------------------------------------------------------------
+                // [샌드박스 경로] 키 미설정: 기존 데모 검증 흐름 유지
+                // ----------------------------------------------------------------
+                // [보안] 플랜이 지정된 경우 "플랜 금액 == 결제 금액"이 1원 단위로 일치해야만 승인합니다.
+                // (기존 코드는 planTier만 맞으면 금액을 검증하지 않아 ₩100 결제로 VIP 해제가 가능했습니다)
+                const numericPaid = Number(paidAmount);
+                let plan = null;
+
+                if (planTier) {
+                    plan = resolvePlan(planTier);
+                    if (!plan || numericPaid !== plan.amountKrw) {
+                        sendJson(res, 400, {
+                            status: 'PRICE_MISMATCH',
+                            message: `선택한 플랜(${planTier})의 금액(${plan ? plan.amountKrw : '알 수 없음'}원)과 결제 요청 금액(${numericPaid}원)이 일치하지 않습니다.`
+                        });
+                        return;
+                    }
+                } else {
+                    plan = numericPaid === config.vipAnnualPrice
+                        ? resolvePlan('VIP_ANNUAL')
+                        : (numericPaid === config.monetizationPrice ? resolvePlan('STARTER_PACK') : null);
+
+                    if (!plan) {
+                        sendJson(res, 400, {
+                            status: 'PRICE_MISMATCH',
+                            message: `결제 요청 금액(${numericPaid}원)이 서버 환경변수 설정 금액(VIP 연간: ${config.vipAnnualPrice}원 / 스타터 팩: ${config.monetizationPrice}원)과 일치하지 않습니다.`
+                        });
+                        return;
+                    }
+                }
+                resolvedPlanTier = plan.planTier;
+                appliedPrice = plan.amountKrw;
+                grantedCredits = plan.creditsGranted;
+
+                // 감사 추적을 위해 샌드박스 결제도 주문 원장에 기록합니다.
+                const sandboxOrder = createOrder({ sessionToken, planTier: plan.planTier });
+                usedOrderId = sandboxOrder.order.orderId;
+                markOrderPaid(usedOrderId, {
+                    paymentKey: 'SANDBOX_SIMULATED',
+                    tossReceipt: {
+                        paymentKey: 'SANDBOX_SIMULATED',
+                        orderId: usedOrderId,
+                        method: 'SANDBOX_SIMULATION',
+                        status: 'DONE',
+                        approvedAt: new Date().toISOString(),
+                        totalAmount: appliedPrice
+                    }
                 });
-                return;
             }
 
-            const record = encryptedDiagnosisStore.get(sessionToken);
-            const grantedCredits = isVipPlan ? config.vipCreditCap : config.starterCreditCap;
-            const initialDiagnosisCost = 10;
+            // [멱등성] 동일 주문(orderId)로 재승인 요청이 들어오면 크레딧을 추가 지급하지 않습니다.
+            // (결제위젯 재시도·새로고침·중복 콜백으로 인한 크레딧 무한 복제 원천 차단)
+            const isReplayOfSameOrder = Boolean(
+                record.isPremiumUnlocked && record.lastOrderId && usedOrderId && record.lastOrderId === usedOrderId
+            );
+            const initialDiagnosisCost = record.isPremiumUnlocked ? 0 : 10;
+
+            if (!isReplayOfSameOrder) {
+                record.remainingCredits = Math.max(
+                    0,
+                    (record.remainingCredits || 0) + grantedCredits - initialDiagnosisCost
+                );
+            }
 
             record.isPremiumUnlocked = true;
-            record.selectedPlanTier = isVipPlan ? 'VIP_ANNUAL_21D_TRIAL' : 'STARTER_CREDIT_PACK';
-            record.remainingCredits = Math.max(0, grantedCredits - initialDiagnosisCost);
+            record.selectedPlanTier = resolvedPlanTier === 'VIP_ANNUAL'
+                ? `VIP_ANNUAL_${config.trialDays}D_TRIAL`
+                : 'STARTER_CREDIT_PACK';
+            record.lastOrderId = usedOrderId;
 
-            const unlockedFullReport = decryptSensitiveData(record.encryptedFullReport);
-            const tossOrderId = 'TOSS_GLOW_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex').toUpperCase();
-            const appliedPrice = isVipPlan ? config.vipAnnualPrice : config.monetizationPrice;
+            // [실제 AI 리포트] 백그라운드 생성 결과를 최대 12초까지 대기 (초과 시 기본 리포트 제공)
+            const aiEnrichment = await waitForAiEnrichment(record, 12000);
+            const unlockedFullReport = aiEnrichment.report;
+
+            const tossOrderId = usedOrderId || ('TOSS_GLOW_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex').toUpperCase());
 
             paymentLedgerStore.set(tossOrderId, {
                 tossOrderId,
@@ -324,8 +537,12 @@ async function handleRequest(req, res) {
                 paidAmountKrw: appliedPrice,
                 creditsGranted: grantedCredits,
                 remainingCredits: record.remainingCredits,
+                paymentMode,
+                tossReceipt,
                 appOwnerIdMasked: config.appOwnerIdMasked,
                 settlementHolderMasked: config.settlementHolderMasked,
+                aiProvider: aiEnrichment.aiMeta.provider || null,
+                aiApplied: Boolean(aiEnrichment.aiMeta.applied),
                 paidAt: new Date().toISOString()
             });
 
@@ -333,22 +550,144 @@ async function handleRequest(req, res) {
                 status: 'UNLOCKED',
                 receipt: {
                     tossOrderId,
+                    orderId: usedOrderId,
                     planTier: record.selectedPlanTier,
-                    trialDaysApplied: isVipPlan ? config.trialDays : 0,
+                    trialDaysApplied: resolvedPlanTier === 'VIP_ANNUAL' ? config.trialDays : 0,
                     paidAmountKrw: appliedPrice,
                     formattedPrice: `₩${appliedPrice.toLocaleString('ko-KR')}`,
                     creditsGranted: grantedCredits,
                     creditsDeductedForDiagnosis: initialDiagnosisCost,
                     remainingCredits: record.remainingCredits,
+                    paymentMode,
+                    tossPayment: tossReceipt ? {
+                        method: tossReceipt.method || null,
+                        cardCompany: tossReceipt.cardCompany || null,
+                        cardNumber: tossReceipt.cardNumber || null,
+                        approvedAt: tossReceipt.approvedAt || null,
+                        receiptUrl: tossReceipt.receiptUrl || null
+                    } : null,
                     appOwnerIdMasked: config.appOwnerIdMasked,
                     settlementHolderMasked: config.settlementHolderMasked,
                     paidAt: new Date().toISOString()
                 },
+                ai: aiEnrichment.aiMeta,
                 unlockedFullReport
             });
         } catch (err) {
             sendJson(res, 500, { status: 'ERROR', message: err.message });
         }
+        return;
+    }
+
+    // ------------------------------------------------------------------------
+    // [API 5-1] POST /api/payment/order  (토스페이먼츠 결제위젯용 주문 생성)
+    // 역할: 서버가 금액을 확정하여 클라이언트의 금액 조작을 원천 차단합니다.
+    // ------------------------------------------------------------------------
+    if (req.method === 'POST' && pathname === '/api/payment/order') {
+        try {
+            const body = await parseJsonBody(req);
+            const { sessionToken, planTier } = body;
+
+            if (!sessionToken || !encryptedDiagnosisStore.has(sessionToken)) {
+                sendJson(res, 404, { status: 'ERROR', message: '유효하지 않은 진단 세션입니다.' });
+                return;
+            }
+
+            const result = createOrder({ sessionToken, planTier });
+            if (!result.ok) {
+                sendJson(res, 400, { status: 'ORDER_CREATE_FAILED', message: result.error });
+                return;
+            }
+
+            sendJson(res, 200, {
+                status: 'ORDER_CREATED',
+                orderId: result.order.orderId,
+                checkout: result.checkout,
+                ai: getAiStatus()
+            });
+        } catch (err) {
+            sendJson(res, 500, { status: 'ERROR', message: err.message });
+        }
+        return;
+    }
+
+    // ------------------------------------------------------------------------
+    // [API 5-2] GET /api/payment/status?orderId=...  (주문 상태 조회)
+    // ------------------------------------------------------------------------
+    if (req.method === 'GET' && pathname === '/api/payment/status') {
+        const orderId = parsedUrl.searchParams.get('orderId');
+        const order = orderId ? getOrder(orderId) : null;
+
+        if (!order) {
+            sendJson(res, 404, { status: 'ORDER_NOT_FOUND', message: '주문을 찾을 수 없습니다.' });
+            return;
+        }
+
+        sendJson(res, 200, { status: 'OK', order });
+        return;
+    }
+
+    // ------------------------------------------------------------------------
+    // [API 5-3] POST /api/payment/cancel  (결제 취소/환불)
+    // ------------------------------------------------------------------------
+    if (req.method === 'POST' && pathname === '/api/payment/cancel') {
+        try {
+            const body = await parseJsonBody(req);
+            const { orderId, paymentKey, cancelReason } = body;
+            const config = getDynamicConfig();
+
+            const order = orderId ? getRawOrder(orderId) : null;
+            const resolvedPaymentKey = paymentKey || (order ? order.paymentKey : null);
+
+            if (!resolvedPaymentKey) {
+                sendJson(res, 400, { status: 'CANCEL_FAILED', message: '취소할 결제 정보(paymentKey 또는 orderId)가 필요합니다.' });
+                return;
+            }
+
+            const cancelResult = await cancelPayment({
+                paymentKey: resolvedPaymentKey,
+                cancelReason: cancelReason || '고객 요청에 의한 환불'
+            });
+
+            if (!cancelResult.ok) {
+                sendJson(res, 402, { status: 'CANCEL_FAILED', message: cancelResult.error });
+                return;
+            }
+
+            // 환불 시 지급했던 크레딧 회수 (부정 사용 방지)
+            if (order && encryptedDiagnosisStore.has(order.sessionToken)) {
+                const record = encryptedDiagnosisStore.get(order.sessionToken);
+                record.isPremiumUnlocked = false;
+                record.remainingCredits = 0;
+                record.selectedPlanTier = 'REFUNDED';
+                record.aiStatus = 'PENDING';
+                record.aiEnrichment = null;
+            }
+
+            sendJson(res, 200, {
+                status: 'CANCELED',
+                paymentMode: config.payments.mode,
+                orderId: orderId || null,
+                receipt: cancelResult.receipt || null
+            });
+        } catch (err) {
+            sendJson(res, 500, { status: 'ERROR', message: err.message });
+        }
+        return;
+    }
+
+    // ------------------------------------------------------------------------
+    // [API 5-4] GET /api/ai/status  (AI 연동 상태 진단 — 운영 관제용)
+    // ------------------------------------------------------------------------
+    if (req.method === 'GET' && pathname === '/api/ai/status') {
+        const aiStatus = getAiStatus();
+        sendJson(res, 200, {
+            status: 'OK',
+            ai: aiStatus,
+            activeEnrichments: [...encryptedDiagnosisStore.values()]
+                .filter((r) => r.aiStatus && r.aiStatus !== 'PENDING').length,
+            totalSessions: encryptedDiagnosisStore.size
+        });
         return;
     }
 
@@ -532,6 +871,19 @@ async function handleRequest(req, res) {
 
     // 정적 파일 서빙
     const frontendRoot = path.resolve(__dirname, '../frontend');
+
+    // [토스페이먼츠 결제 후 리다이렉트 페이지] 결제창(새 창)에서 승인 후 이 페이지로 돌아와
+    // 부모 창(opener)에 paymentKey/orderId/amount 를 postMessage 로 전달하고 자동으로 닫힙니다.
+    if (pathname === '/payments/success' || pathname === '/payments/fail') {
+        const pageFile = pathname === '/payments/success' ? '/payments-success.html' : '/payments-fail.html';
+        const pagePath = path.join(frontendRoot, pageFile);
+        if (fs.existsSync(pagePath)) {
+            res.writeHead(200, { 'Content-Type': MIME_TYPES['.html'] });
+            res.end(fs.readFileSync(pagePath));
+            return;
+        }
+    }
+
     let relativePath = pathname === '/' ? '/index.html' : pathname;
     const safePath = path.normalize(relativePath).replace(/^(\.\.[/\\])+/, '');
     const filePath = path.join(frontendRoot, safePath);
@@ -565,6 +917,17 @@ function startServer(customPort) {
             console.log(`🔬 피부 스캐너   : POST /api/skin/scan (5대 지표 + 4주 이원화 회복 곡선)`);
             console.log(`📸 포토 스튜디오 : POST /api/hook/action [STUDIO_RENDER] (-10 크레딧)`);
             console.log(`🔐 정산 소유자   : ${config.appOwnerIdMasked} (${config.settlementHolderMasked})`);
+
+            const aiStatus = getAiStatus();
+            const payStatus = getPaymentStatus();
+            console.log('--------------------------------------------------------------------');
+            console.log(aiStatus.enabled
+                ? `🧠 AI 엔진      : [LIVE] ${String(aiStatus.provider).toUpperCase()} · ${aiStatus.model} (키 ${aiStatus.apiKeyMasked})`
+                : `🧠 AI 엔진      : [FALLBACK] 로컬 결정론적 엔진 (AI 키 미설정 → 자동 폴백)`);
+            console.log(payStatus.mode === 'TOSS_LIVE'
+                ? `💳 결제 게이트웨이: [TOSS_LIVE] 토스페이먼츠 실결제 (clientKey ${payStatus.clientKeyMasked})`
+                : `💳 결제 게이트웨이: [SANDBOX] 시뮬레이션 (TOSS_PAYMENTS_CLIENT_KEY / SECRET_KEY 미설정)`);
+            console.log(`   ↳ AI 상태 API : GET /api/ai/status   | 주문 생성: POST /api/payment/order`);
             console.log('====================================================================');
             resolve({ server, port: actualPort, config });
         });

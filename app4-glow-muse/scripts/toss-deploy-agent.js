@@ -41,8 +41,14 @@ function runAutomatedDeployment() {
         'backend/config/envLoader.js',
         'backend/security/cryptoManager.js',
         'backend/services/glowEngine.js',
+        // [실전 연동] 실제 AI 게이트웨이 & 토스페이먼츠 결제 게이트웨이
+        'backend/services/aiProvider.js',
+        'backend/services/aiEnrichment.js',
+        'backend/services/paymentGateway.js',
         'backend/server.js',
         'frontend/index.html',
+        'frontend/payments-success.html',
+        'frontend/payments-fail.html',
         'frontend/styles/tds-glow.css',
         'frontend/js/app.js'
     ];

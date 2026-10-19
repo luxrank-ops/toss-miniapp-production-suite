@@ -26,6 +26,10 @@ const {
     simulateChugumiPhotoStudio,
     getBusinessEvaluatorReport
 } = require('../backend/services/glowEngine');
+// [QA-07] 실제 AI 게이트웨이 & 토스페이먼츠 결제 게이트웨이 검증용
+const { getAiStatus } = require('../backend/services/aiProvider');
+const { mergeSkinScanResult } = require('../backend/services/aiEnrichment');
+const { createOrder, resolvePlan, getPaymentStatus } = require('../backend/services/paymentGateway');
 
 function runQaAudit() {
     const projectRoot = path.resolve(__dirname, '..');
@@ -43,7 +47,7 @@ function runQaAudit() {
         id: 'QA-01',
         name: '.env.example 동적 플레이스홀더(VIP 연간 패스·크레딧 한도 포함) 규격 검증',
         passed: hasBlankPlaceholders,
-        score: hasBlankPlaceholders ? 15 : 0
+        score: hasBlankPlaceholders ? 12 : 0
     });
 
     // 2. AES-256-GCM 암호화 및 복호화 무결성 검증 (규칙 8)
@@ -59,7 +63,7 @@ function runQaAudit() {
         id: 'QA-02',
         name: 'AES-256-GCM 양방향 암호화 및 난수 IV 무결성 검증',
         passed: cryptoPassed,
-        score: cryptoPassed ? 15 : 0
+        score: cryptoPassed ? 12 : 0
     });
 
     // 3. [1순위 app-business-evaluator] Hard Paywall & 21일 체험 고LTV 가격 정책 검증
@@ -93,7 +97,7 @@ function runQaAudit() {
         id: 'QA-04',
         name: '[2순위 Consultant] 4주 회복 이원화 곡선(SOS vs 방치) & 최저가/청담 CPA 검증',
         passed: consultantPassed,
-        score: consultantPassed ? 20 : 0
+        score: consultantPassed ? 18 : 0
     });
 
     // 5. [3순위 Cross-Store & 4순위 Toss-Top10] AI 추구미 포토 스튜디오 & 라이브 티커/영수증 모달 검증
@@ -110,7 +114,7 @@ function runQaAudit() {
         id: 'QA-05',
         name: '[3·4순위 Design] AI 포토 스튜디오 Before/After & 실시간 티커 & 처방 영수증 모달 검증',
         passed: designAndInteractionPassed,
-        score: designAndInteractionPassed ? 20 : 0
+        score: designAndInteractionPassed ? 18 : 0
     });
 
     // 6. Pydantic AI 스키마 규격 비즈니스 평가 JSON & Supabase SQL 번호 규칙(001_~005_) 검증
@@ -126,7 +130,59 @@ function runQaAudit() {
         id: 'QA-06',
         name: 'Pydantic AI 스키마 JSON(9.6점) 및 Supabase SQL 000_ 번호 규칙(001~005) 검증',
         passed: schemaAndSqlPassed,
-        score: schemaAndSqlPassed ? 15 : 0
+        score: schemaAndSqlPassed ? 12 : 0
+    });
+
+    // 7. [실제 AI 연동 & 실결제 게이트웨이] 폴백 안전성 + 금액 위변조 방어 검증
+    const aiStatus = getAiStatus();
+    const baseScan = analyzeSkinBarrierScan('https://images.unsplash.com/photo-1544005313-94ddf0286df2', 26);
+
+    // AI가 범위를 벗어난 값/잘못된 타입을 반환해도(환각·프롬프트 인젝션) 결과가 오염되지 않아야 함
+    const hostileAiPayload = {
+        skinBarrierScore: 999999,
+        skinAge: 3,
+        skinType: 'x'.repeat(500),
+        barrierStatus: 'INVALID',
+        aiAnalysisText: 12345,
+        metrics: [{ id: 'hydration', score: -80, summary: null }],
+        sosCareRoutine: 'NOT_AN_ARRAY',
+        recommendedIngredients: [{ name: null }]
+    };
+    const hostileMerged = mergeSkinScanResult(baseScan, hostileAiPayload).merged;
+    const hostileAiPassed =
+        typeof aiStatus.mode === 'string' &&
+        hostileMerged.skinBarrierScore >= 0 && hostileMerged.skinBarrierScore <= 100 &&
+        hostileMerged.skinAge >= 18 &&
+        hostileMerged.skinType.length <= 60 &&
+        Array.isArray(hostileMerged.sosCareRoutine) &&
+        Array.isArray(hostileMerged.metrics) && hostileMerged.metrics.length === 5 &&
+        Array.isArray(hostileMerged.recoveryComparison.sosAppliedScores);
+
+    // 결제: 존재하지 않는 플랜 거절 + 서버가 금액을 확정(VIP 금액 = 환경변수 값)
+    const invalidOrder = createOrder({ sessionToken: 'glow_qa_invalid', planTier: 'HACK_100_WON' });
+    const vipPlan = resolvePlan('VIP_ANNUAL');
+    const validOrder = createOrder({ sessionToken: 'glow_qa_valid', planTier: 'VIP_ANNUAL' });
+    const payStatus = getPaymentStatus();
+    const paymentGatewayPassed =
+        invalidOrder.ok === false &&
+        validOrder.ok === true &&
+        validOrder.order.amountKrw === config.vipAnnualPrice &&
+        validOrder.checkout.amountKrw === config.vipAnnualPrice &&
+        vipPlan.amountKrw === config.vipAnnualPrice &&
+        vipPlan.creditsGranted === config.vipCreditCap &&
+        (payStatus.mode === 'TOSS_LIVE' || payStatus.mode === 'SANDBOX_SIMULATION');
+
+    const aiAndPaymentPassed =
+        hostileAiPassed &&
+        paymentGatewayPassed &&
+        envExampleContent.includes('AI_PROVIDER=') &&
+        envExampleContent.includes('TOSS_PAYMENTS_SECRET_KEY=');
+
+    checks.push({
+        id: 'QA-07',
+        name: '[실전 연동] AI 게이트웨이 폴백·응답 검증 & 토스페이먼츠 서버 금액 확정(위변조 방어) 검증',
+        passed: aiAndPaymentPassed,
+        score: aiAndPaymentPassed ? 13 : 0
     });
 
     const totalScore = checks.reduce((sum, item) => sum + item.score, 0);

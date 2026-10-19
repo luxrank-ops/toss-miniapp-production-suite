@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node backend/server.js",
     "qa": "node scripts/qa-auditor.js",
-    "deploy": "node scripts/toss-deploy-agent.js"
+    "deploy": "node scripts/toss-deploy-agent.js",
+    "test:integration": "node scripts/integration-smoke-test.js",
+    "verify": "node scripts/qa-auditor.js && node scripts/integration-smoke-test.js"
   },
   "keywords": [
     "toss-miniapp",

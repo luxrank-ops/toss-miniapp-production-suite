@@ -8,7 +8,7 @@
   "qaStatus": "PASS",
   "qaScore": "100/100",
   "commercialViabilityScore": "9.6/10.0",
-  "bundleHash": "4198a2459ac343435d665d31b9cb12c598c33fe5d46e7ae5f6dd722750918141",
+  "bundleHash": "2848c1d4465addc4e93da358437f36cd9cb96c635f061e3ab92f03d907eac0e6",
   "endpointUrl": "http://localhost:3003",
   "multiAgentCollaborationSummary": {
     "rank1_appBusinessEvaluator": "Hard Paywall(10.7%) + 21일 무료 체험 후 연 ₩79,000(100 크레딧) + 차등 크레딧 차감(-2/-3/-5/-10)",
@@ -19,8 +19,8 @@
   "fileManifest": [
     {
       "path": ".env.example",
-      "sizeBytes": 1486,
-      "sha256": "0c82a58731f4ab2e"
+      "sizeBytes": 3303,
+      "sha256": "094c7cfef1ecd84d"
     },
     {
       "path": "supabase/migrations/001_create_glow_muse_tables.sql",
@@ -64,8 +64,8 @@
     },
     {
       "path": "backend/config/envLoader.js",
-      "sizeBytes": 5030,
-      "sha256": "aa151508200bec16"
+      "sizeBytes": 9511,
+      "sha256": "2e8d82f60da3c1b5"
     },
     {
       "path": "backend/security/cryptoManager.js",
@@ -74,18 +74,43 @@
     },
     {
       "path": "backend/services/glowEngine.js",
-      "sizeBytes": 41801,
-      "sha256": "16a289012e0c87eb"
+      "sizeBytes": 43441,
+      "sha256": "baff600b58ae72c1"
+    },
+    {
+      "path": "backend/services/aiProvider.js",
+      "sizeBytes": 15828,
+      "sha256": "f46f1d1e775e32f4"
+    },
+    {
+      "path": "backend/services/aiEnrichment.js",
+      "sizeBytes": 18912,
+      "sha256": "74b4d53a973adda9"
+    },
+    {
+      "path": "backend/services/paymentGateway.js",
+      "sizeBytes": 13792,
+      "sha256": "e32dced2c34db87a"
     },
     {
       "path": "backend/server.js",
-      "sizeBytes": 27563,
-      "sha256": "db476f0c4a93025e"
+      "sizeBytes": 44935,
+      "sha256": "671bd18c5c259f6d"
     },
     {
       "path": "frontend/index.html",
-      "sizeBytes": 61485,
-      "sha256": "95203975d8001ade"
+      "sizeBytes": 62676,
+      "sha256": "6fed9841827ce12e"
+    },
+    {
+      "path": "frontend/payments-success.html",
+      "sizeBytes": 3516,
+      "sha256": "a5e63fe79134b2ae"
+    },
+    {
+      "path": "frontend/payments-fail.html",
+      "sizeBytes": 3508,
+      "sha256": "0aae0e62ec0bddbc"
     },
     {
       "path": "frontend/styles/tds-glow.css",
@@ -94,9 +119,9 @@
     },
     {
       "path": "frontend/js/app.js",
-      "sizeBytes": 60553,
-      "sha256": "792547236ac3698b"
+      "sizeBytes": 72610,
+      "sha256": "6676587be3f53f55"
     }
   ],
-  "deployedAt": "2026-10-19T09:25:14.396Z"
+  "deployedAt": "2026-10-19T11:13:32.120Z"
 }

@@ -57,6 +57,10 @@
                 <span>🪙 크레딧:</span>
                 <strong id="creditBalanceText">0</strong>
             </div>
+            <div id="aiEngineBadge" class="credit-pill" style="cursor:help;" title="현재 리포트·피부 스캔을 생성하는 AI 엔진 상태 (LIVE = 실제 LLM/Vision 호출)">
+                <span>🧠</span>
+                <strong id="aiEngineText" style="font-size:11.5px;">AI 확인 중</strong>
+            </div>
             <button id="openShoppingListBtn" type="button" class="biz-eval-btn" style="border-color:rgba(244,63,94,0.45); color:#fda4af;">
                 🛒 쇼핑함 (<span id="shoppingCartCountText">0</span>)
             </button>
@@ -229,6 +233,10 @@
                                     </span>
                                     <span id="scanSkinAgeBadge" style="font-size:11px; font-weight:800; padding:3px 9px; border-radius:999px; background:rgba(255,255,255,0.08); color:var(--text-secondary);">
                                         피부 나이 25세
+                                    </span>
+                                    <!-- [실제 AI 연동 표시] LIVE_AI(실제 모델 분석) vs LOCAL(목업 엔진) -->
+                                    <span id="scanAiEngineBadge" style="font-size:11px; font-weight:800; padding:3px 9px; border-radius:999px; background:rgba(99,102,241,0.22); color:#a5b4fc;">
+                                        🧠 AI 엔진 확인 중...
                                     </span>
                                 </div>
                                 <h3 id="scanSkinTypeTitle" style="font-size:16px; font-weight:900; margin-top:6px;">
@@ -698,6 +706,10 @@
                     <span>약정 결제 기준 금액</span>
                     <strong id="sheetPriceText" style="color:var(--accent-main);">₩79,000</strong>
                 </div>
+            </div>
+            <!-- [실제 결제 연동 상태 배지] TOSS_LIVE(실결제) / SANDBOX(시뮬레이션) -->
+            <div id="paymentModeBadge" style="margin-top:12px; padding:9px 11px; border-radius:12px; font-size:11.5px; font-weight:700; text-align:center; background:rgba(99,102,241,0.14); border:1px solid rgba(99,102,241,0.4); color:#c7d2fe;">
+                결제 게이트웨이 상태 확인 중...
             </div>
             <button id="confirmTossPayBtn" type="button" class="toss-pay-confirm-btn">
                 토스페이로 1초 만에 승인하고 전체 처방전 잠금 해제하기
