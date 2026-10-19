@@ -174,6 +174,61 @@ function createCollection({ name, tableKey, pk, recordKey, toRow, fromRow }) {
             memory.set(key, restored);
             runtimeState.hydrations += 1;
             return restored;
+        },
+
+        /**
+         * DB 전체(최대 limit건)를 메모리로 적재합니다.
+         * 서버 재시작 후 자동결제 스케줄러가 기존 구독을 인식하도록 부팅 시 1회 호출합니다.
+         * @returns {Promise<{ ok: boolean, hydrated: number, skipped?: string }>}
+         */
+        async hydrateAll({ limit = 500 } = {}) {
+            const config = getSupabaseConfig();
+            if (!config.enabled) {
+                return { ok: false, hydrated: 0, skipped: 'NOT_CONFIGURED' };
+            }
+
+            const result = await supabase.selectMany(config.tables[tableKey], {
+                limit: Math.max(1, Math.min(Number(limit) || 500, 1000))
+            });
+
+            if (!result.ok || !Array.isArray(result.data)) {
+                return { ok: false, hydrated: 0, error: result.error || 'SELECT_FAILED' };
+            }
+
+            let hydrated = 0;
+            for (const row of result.data) {
+                const restored = fromRow(row);
+                if (!restored) {
+                    continue;
+                }
+                const key = recordKey(restored) || row[pk];
+                if (!key) {
+                    continue;
+                }
+                memory.set(key, restored);
+                hydrated += 1;
+            }
+
+            runtimeState.hydrations += hydrated;
+            return { ok: true, hydrated };
+        },
+
+        /**
+         * 메모리·DB에서 레코드를 삭제합니다. (만료 캐시 정리·구독 폐기용)
+         * DB 삭제 실패는 치명적이지 않으므로 무시합니다.
+         */
+        async remove(key, pkColumn = pk) {
+            memory.delete(key);
+            const config = getSupabaseConfig();
+            if (!config.enabled) {
+                return { ok: false, skipped: 'NOT_CONFIGURED' };
+            }
+            return supabase.deleteRows(config.tables[tableKey], { [pkColumn]: key });
+        },
+
+        /** 메모리 전체 스냅샷 (스케줄러 순회용) */
+        list() {
+            return [...memory.values()];
         }
     };
 
@@ -230,6 +285,14 @@ const orders = createCollection({
             order_name: record.orderName || null,
             status: record.status,
             payment_mode: record.mode || null,
+            payment_method: record.paymentMethod || 'CARD',
+            payment_source: record.paymentSource || 'TOSS_PAYMENTS',
+            subscription_id: record.subscriptionId || null,
+            customer_name: record.customerName || null,
+            bank: record.bank || null,
+            virtual_account_json: record.virtualAccount ? JSON.stringify(record.virtualAccount).slice(0, 2000) : null,
+            entitlements_granted: Boolean(record.entitlementsGranted),
+            fulfilled_at: record.fulfilledAt || null,
             payment_key_masked: record.paymentKey ? `${String(record.paymentKey).slice(0, 6)}***` : null,
             app_owner_id_masked: record.appOwnerIdMasked || null,
             updated_at: new Date().toISOString(),
@@ -260,6 +323,23 @@ const orders = createCollection({
             orderName: row.order_name,
             status: row.status,
             mode: row.payment_mode,
+            paymentMethod: row.payment_method || 'CARD',
+            paymentSource: row.payment_source || 'TOSS_PAYMENTS',
+            subscriptionId: row.subscription_id || null,
+            customerName: row.customer_name || null,
+            bank: row.bank || null,
+            virtualAccount: (() => {
+                if (!row.virtual_account_json) {
+                    return null;
+                }
+                try {
+                    return JSON.parse(row.virtual_account_json);
+                } catch (err) {
+                    return null;
+                }
+            })(),
+            entitlementsGranted: Boolean(row.entitlements_granted),
+            fulfilledAt: row.fulfilled_at || null,
             paymentKey: null, // 보안: 원본 paymentKey 는 복원하지 않음(승인 API 전용)
             tossReceipt,
             appOwnerIdMasked: row.app_owner_id_masked,
@@ -368,7 +448,155 @@ const studioLogs = createCollection({
 });
 
 // ============================================================================
-// [6] AI 추론 관제 로그 (개인정보 없음 → 평문 저장, 원가·지연 추적 목적)
+// [6] 토스페이먼츠 웹훅 수신 로그 (재전송 멱등성 + 감사 추적)
+// ============================================================================
+const webhookLogs = createCollection({
+    name: 'webhookLogs',
+    tableKey: 'webhookLogs',
+    pk: 'transmission_id',
+    recordKey: (record) => record.transmissionId,
+    toRow: (record) => buildEncryptedRow(record, {
+        event_type: record.eventType || null,
+        order_id: record.orderId || null,
+        payment_status: record.paymentStatus || null,
+        processed_result: record.processedResult || null,
+        retried_count: Number(record.retriedCount) || 0,
+        received_at: record.receivedAt || new Date().toISOString()
+    }),
+    fromRow: (row) => {
+        const payload = parseEncryptedRow(row);
+        if (!payload) {
+            return null;
+        }
+        return {
+            ...payload,
+            transmissionId: row.transmission_id,
+            eventType: row.event_type,
+            orderId: row.order_id,
+            paymentStatus: row.payment_status,
+            processedResult: row.processed_result,
+            retriedCount: row.retried_count,
+            receivedAt: row.received_at
+        };
+    }
+});
+
+// ============================================================================
+// [7] 자동결제(빌링) 구독 원장 — 빌링키는 암호화 페이로드에만 저장
+// ============================================================================
+const billingSubscriptions = createCollection({
+    name: 'billingSubscriptions',
+    tableKey: 'billingSubscriptions',
+    pk: 'subscription_id',
+    recordKey: (record) => record.subscriptionId,
+    toRow: (record) => buildEncryptedRow(record, {
+        customer_key: record.customerKey,
+        plan_tier: record.planTier,
+        amount_krw: Number(record.amountKrw) || 0,
+        status: record.status,
+        next_charge_at: record.nextChargeAt || null,
+        failed_attempts: Number(record.failedAttempts) || 0,
+        billing_key_masked: record.billingKeyMasked || null,
+        billing_key_hash: record.billingKeyHash || null,
+        updated_at: new Date().toISOString()
+    }),
+    fromRow: (row) => {
+        const payload = parseEncryptedRow(row);
+        if (!payload) {
+            return null;
+        }
+        return {
+            ...payload,
+            subscriptionId: row.subscription_id,
+            customerKey: row.customer_key,
+            planTier: row.plan_tier,
+            amountKrw: row.amount_krw,
+            status: row.status,
+            nextChargeAt: row.next_charge_at,
+            failedAttempts: row.failed_attempts,
+            billingKeyMasked: row.billing_key_masked,
+            billingKeyHash: row.billing_key_hash
+        };
+    }
+});
+
+// ============================================================================
+// [8] App-in-Toss 인앱결제(IAP) 주문 원장 — orderId 멱등성 보장
+// ============================================================================
+const iapOrders = createCollection({
+    name: 'iapOrders',
+    tableKey: 'iapOrders',
+    pk: 'ait_order_id',
+    recordKey: (record) => record.aitOrderId,
+    toRow: (record) => buildEncryptedRow(record, {
+        session_token: record.sessionToken || null,
+        sku: record.sku || null,
+        plan_tier: record.planTier || null,
+        credits_granted: Number(record.creditsGranted) || 0,
+        status: record.status || null,
+        user_key_hash: record.userKeyHash || null,
+        internal_order_id: record.internalOrderId || null,
+        updated_at: new Date().toISOString()
+    }),
+    fromRow: (row) => {
+        const payload = parseEncryptedRow(row);
+        if (!payload) {
+            return null;
+        }
+        return {
+            ...payload,
+            aitOrderId: row.ait_order_id,
+            sessionToken: row.session_token,
+            sku: row.sku,
+            planTier: row.plan_tier,
+            creditsGranted: row.credits_granted,
+            status: row.status,
+            userKeyHash: row.user_key_hash,
+            internalOrderId: row.internal_order_id
+        };
+    }
+});
+
+// ============================================================================
+// [9] AI 응답 캐시 — 동일 입력 재요청 시 LLM 호출 생략 (암호화 저장)
+// ============================================================================
+const aiCache = createCollection({
+    name: 'aiCache',
+    tableKey: 'aiCache',
+    pk: 'cache_key',
+    recordKey: (record) => record.cacheKey,
+    toRow: (record) => buildEncryptedRow(record, {
+        request_kind: record.requestKind || null,
+        provider: record.provider || null,
+        model: record.model || null,
+        image_hash: record.imageHash || null,
+        expires_at: record.expiresAt || null,
+        hit_count: Number(record.hitCount) || 0,
+        last_hit_at: record.lastHitAt || null,
+        created_at: record.createdAt || new Date().toISOString()
+    }),
+    fromRow: (row) => {
+        const payload = parseEncryptedRow(row);
+        if (!payload) {
+            return null;
+        }
+        return {
+            ...payload,
+            cacheKey: row.cache_key,
+            requestKind: row.request_kind,
+            provider: row.provider,
+            model: row.model,
+            imageHash: row.image_hash,
+            expiresAt: row.expires_at,
+            hitCount: row.hit_count,
+            lastHitAt: row.last_hit_at,
+            createdAt: row.created_at
+        };
+    }
+});
+
+// ============================================================================
+// [10] AI 추론 관제 로그 (개인정보 없음 → 평문 저장, 원가·지연 추적 목적)
 // ============================================================================
 async function logAiInference(entry) {
     const config = getSupabaseConfig();
@@ -432,7 +660,11 @@ function getStatus() {
             orders: orders.size,
             payments: payments.size,
             skinScans: skinScans.size,
-            studioLogs: studioLogs.size
+            studioLogs: studioLogs.size,
+            webhookLogs: webhookLogs.size,
+            billingSubscriptions: billingSubscriptions.size,
+            iapOrders: iapOrders.size,
+            aiCache: aiCache.size
         },
         metrics: {
             writes: runtimeState.writes,
@@ -452,6 +684,10 @@ module.exports = {
     payments,
     skinScans,
     studioLogs,
+    webhookLogs,
+    billingSubscriptions,
+    iapOrders,
+    aiCache,
     buildEncryptedRow,
     parseEncryptedRow
 };

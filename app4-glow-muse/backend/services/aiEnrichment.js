@@ -226,7 +226,8 @@ async function runAiSkinScan({ imageBase64, userAge, skinConcern, baseResult }) 
         userPrompt: buildSkinScanUserPrompt({ userAge, skinConcern }),
         imageBase64,
         temperature: 0.4,
-        timeoutMs: aiStatus.timeoutMs
+        timeoutMs: aiStatus.timeoutMs,
+        requestKind: 'SKIN_SCAN'
     });
 
     if (!aiResponse.ok || !aiResponse.data) {
@@ -254,7 +255,8 @@ async function runAiSkinScan({ imageBase64, userAge, skinConcern, baseResult }) 
             appliedFields,
             fallbackUsed: false,
             latencyMs: aiResponse.meta.latencyMs,
-            imageSource: aiResponse.meta.imageSource
+            imageSource: aiResponse.meta.imageSource,
+            cache: aiResponse.meta.cache || null
         }
     };
 }
@@ -412,7 +414,8 @@ async function runAiReport({ profile, baseReport }) {
         systemPrompt: REPORT_SYSTEM_PROMPT,
         userPrompt: buildReportUserPrompt(profile, baseReport),
         temperature: 0.8,
-        timeoutMs: aiStatus.timeoutMs
+        timeoutMs: aiStatus.timeoutMs,
+        requestKind: 'PREMIUM_REPORT'
     });
 
     if (!aiResponse.ok || !aiResponse.data) {
@@ -439,7 +442,8 @@ async function runAiReport({ profile, baseReport }) {
             applied: appliedFields.length > 0,
             appliedFields,
             fallbackUsed: false,
-            latencyMs: aiResponse.meta.latencyMs
+            latencyMs: aiResponse.meta.latencyMs,
+            cache: aiResponse.meta.cache || null
         }
     };
 }

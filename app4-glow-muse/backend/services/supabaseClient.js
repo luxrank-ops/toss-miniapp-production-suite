@@ -200,6 +200,15 @@ async function updateRow(table, filters, patch) {
     return { ok: true, data: rows[0] || null };
 }
 
+/** 행 삭제 (캐시 만료 정리·빌링키 폐기 등) */
+async function deleteRows(table, filters = {}) {
+    const query = buildFilterQuery(filters);
+    if (!query) {
+        return { ok: false, error: '삭제에는 최소 1개의 필터가 필요합니다.', code: 'NO_FILTER' };
+    }
+    return call('DELETE', `/${table}${query}`, { prefer: 'return=minimal' });
+}
+
 /**
  * 연결 상태 헬스 체크 (서버 부팅 시 1회 + 서킷 쿨다운 종료 후 재시도 시 사용)
  * - 실제 테이블 1건 조회로 "키 권한·스키마 존재"까지 함께 확인합니다.
@@ -254,6 +263,7 @@ module.exports = {
     selectOne,
     selectMany,
     updateRow,
+    deleteRows,
     healthCheck,
     getClientStatus,
     resetCircuit,

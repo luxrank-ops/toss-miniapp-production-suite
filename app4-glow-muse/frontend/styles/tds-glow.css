@@ -1047,3 +1047,25 @@ body[data-theme="light"] .hard-paywall-card {
 .hidden {
     display: none !important;
 }
+
+/* ============================================================================
+   [가상계좌 · 앱인토스 IAP] 결제수단 선택 세그먼트
+   ============================================================================ */
+.payment-method-btn {
+    flex: 1;
+    padding: 10px 8px;
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+    background: var(--glass-surface);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: transform 0.12s ease, background 0.16s ease, border-color 0.16s ease;
+}
+.payment-method-btn:active { transform: scale(0.97); }
+.payment-method-btn.active {
+    background: rgba(49, 130, 246, 0.18);
+    border-color: rgba(49, 130, 246, 0.62);
+    color: #93c5fd;
+}

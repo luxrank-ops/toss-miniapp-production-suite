@@ -39,6 +39,8 @@ function requestJson(url, options = {}) {
 // [목 LLM 서버] OpenAI Chat Completions 호환 (Vision 포함)
 // ============================================================================
 function startMockAiServer() {
+    const stats = { requests: 0, visionRequests: 0, textRequests: 0 };
+
     const server = http.createServer((req, res) => {
         let raw = '';
         req.on('data', (chunk) => { raw += chunk.toString('utf8'); });
@@ -55,6 +57,13 @@ function startMockAiServer() {
             const userContent = (messages[1] && messages[1].content) || [];
             const hasImage = Array.isArray(userContent)
                 && userContent.some((part) => part && part.type === 'image_url');
+
+            stats.requests += 1;
+            if (hasImage) {
+                stats.visionRequests += 1;
+            } else {
+                stats.textRequests += 1;
+            }
 
             const content = hasImage
                 ? JSON.stringify({
@@ -105,7 +114,12 @@ function startMockAiServer() {
     });
 
     return new Promise((resolve) => {
-        server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port }));
+        server.listen(0, '127.0.0.1', () => resolve({
+            server,
+            port: server.address().port,
+            stats,
+            requestCount: () => stats.requests
+        }));
     });
 }
 
@@ -206,7 +220,15 @@ function startMockSupabaseServer({ serviceKey, failMode = false } = {}) {
                     body = {};
                 }
 
-                const existingIndex = rows.findIndex((row) => filters.every((f) => String(row[f.column]) === f.value));
+                // Supabase upsert 는 on_conflict 컬럼 기준으로 병합합니다.
+                // (필터가 비어 있을 때 첫 행을 덮어쓰지 않도록 반드시 on_conflict 를 우선)
+                const onConflict = url.searchParams.get('on_conflict');
+                const conflictColumns = onConflict ? onConflict.split(',').map((c) => c.trim()).filter(Boolean) : [];
+                const existingIndex = conflictColumns.length > 0
+                    ? rows.findIndex((row) => conflictColumns.every((c) => String(row[c]) === String(body[c])))
+                    : (filters.length > 0
+                        ? rows.findIndex((row) => filters.every((f) => String(row[f.column]) === f.value))
+                        : -1);
                 if (existingIndex >= 0) {
                     rows[existingIndex] = { ...rows[existingIndex], ...body };
                     sendRows([rows[existingIndex]]);
@@ -252,11 +274,24 @@ function startMockSupabaseServer({ serviceKey, failMode = false } = {}) {
 }
 
 // ============================================================================
-// [목 토스페이먼츠 서버] /v1/payments/confirm · /v1/payments/{key}/cancel
+// [목 토스페이먼츠 서버]
+//   - 카드 승인 / 취소
+//   - 가상계좌 발급(WAITING_FOR_DEPOSIT) + 입금 완료 시뮬레이션(markDeposit)
+//   - 빌링키 발급 / 자동결제 승인 / 빌링키 삭제
+//   - 웹훅 canonical 검증용 결제 재조회(GET /payments/{key}, /payments/orders/{orderId})
 // ============================================================================
 function startMockTossServer({ secretKey }) {
     const expectedAuth = 'Basic ' + Buffer.from(`${secretKey}:`).toString('base64');
     const calls = [];
+    const paymentsByKey = new Map();
+    const paymentsByOrder = new Map();
+    const billingKeys = new Set();
+    const control = { failCharges: false, failLookup: false };
+
+    const send = (res, status, payload) => {
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(payload));
+    };
 
     const server = http.createServer((req, res) => {
         let raw = '';
@@ -268,25 +303,50 @@ function startMockTossServer({ secretKey }) {
             } catch (err) {
                 payload = {};
             }
+            const cleanUrl = req.url.split('?')[0];
             calls.push({ url: req.url, auth: req.headers.authorization, payload });
 
             // [보안 검증] Basic 인증 헤더가 정확한 시크릿 키로 생성되었는지 확인
             if (req.headers.authorization !== expectedAuth) {
-                res.writeHead(401, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ code: 'INVALID_AUTHORIZATION', message: '인증 실패' }));
+                send(res, 401, { code: 'INVALID_AUTHORIZATION', message: '인증 실패' });
                 return;
             }
 
-            if (req.url === '/v1/payments/confirm') {
+            // ------------------------- 결제 승인 -------------------------
+            if (req.method === 'POST' && cleanUrl === '/v1/payments/confirm') {
                 // 의도적 실패 키
                 if (payload.paymentKey === 'FAIL_ME') {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ code: 'PAY_PROCESS_CANCELED', message: '사용자가 결제를 취소했습니다.' }));
+                    send(res, 400, { code: 'PAY_PROCESS_CANCELED', message: '사용자가 결제를 취소했습니다.' });
                     return;
                 }
 
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
+                // [가상계좌] 승인 = 계좌 발급. status 는 WAITING_FOR_DEPOSIT, secret 포함.
+                if (String(payload.paymentKey || '').startsWith('va_')) {
+                    const vaPayment = {
+                        paymentKey: payload.paymentKey,
+                        orderId: payload.orderId,
+                        status: 'WAITING_FOR_DEPOSIT',
+                        method: '가상계좌',
+                        totalAmount: payload.amount,
+                        approvedAt: null,
+                        virtualAccount: {
+                            accountNumber: '10023345678901',
+                            bankCode: '20',
+                            bank: '우리은행',
+                            customerName: '가상뮤즈',
+                            accountHolder: '머즈글로우',
+                            dueDate: '2026-10-20 23:59:59'
+                        },
+                        secret: 'va_secret_smoke_ok',
+                        receipt: { url: 'https://mock.tosspayments.com/receipt/va' }
+                    };
+                    paymentsByKey.set(vaPayment.paymentKey, vaPayment);
+                    paymentsByOrder.set(vaPayment.orderId, vaPayment);
+                    send(res, 200, vaPayment);
+                    return;
+                }
+
+                const cardPayment = {
                     paymentKey: payload.paymentKey,
                     orderId: payload.orderId,
                     status: 'DONE',
@@ -295,35 +355,227 @@ function startMockTossServer({ secretKey }) {
                     approvedAt: new Date().toISOString(),
                     receipt: { url: 'https://mock.tosspayments.com/receipt/1234' },
                     card: { company: '신한카드', number: '1234**********5678', installmentPlanMonths: 0 }
-                }));
+                };
+                paymentsByKey.set(cardPayment.paymentKey, cardPayment);
+                paymentsByOrder.set(cardPayment.orderId, cardPayment);
+                send(res, 200, cardPayment);
                 return;
             }
 
-            const cancelMatch = req.url.match(/^\/v1\/payments\/(.+)\/cancel$/);
-            if (cancelMatch) {
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                    paymentKey: decodeURIComponent(cancelMatch[1]),
+            // ------------------------- 결제 취소 -------------------------
+            const cancelMatch = cleanUrl.match(/^\/v1\/payments\/(.+)\/cancel$/);
+            if (req.method === 'POST' && cancelMatch) {
+                const paymentKey = decodeURIComponent(cancelMatch[1]);
+                const existing = paymentsByKey.get(paymentKey);
+                if (existing) {
+                    existing.status = 'CANCELED';
+                }
+                send(res, 200, {
+                    paymentKey,
                     status: 'CANCELED',
                     cancels: [{ cancelReason: payload.cancelReason, canceledAt: new Date().toISOString() }]
-                }));
+                });
                 return;
             }
 
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ code: 'NOT_FOUND', message: 'unknown endpoint' }));
+            // ------------------- 웹훅 canonical 재조회 -------------------
+            const orderLookup = cleanUrl.match(/^\/v1\/payments\/orders\/(.+)$/);
+            if (req.method === 'GET' && orderLookup) {
+                if (control.failLookup) {
+                    // 토스 API 일시 장애(네트워크 오류) 시뮬레이션
+                    req.destroy();
+                    return;
+                }
+                const orderId = decodeURIComponent(orderLookup[1]);
+                const payment = paymentsByOrder.get(orderId);
+                if (!payment) {
+                    send(res, 404, { code: 'NOT_FOUND_PAYMENT', message: '결제 정보를 찾을 수 없습니다.' });
+                    return;
+                }
+                send(res, 200, payment);
+                return;
+            }
+
+            const paymentLookup = cleanUrl.match(/^\/v1\/payments\/([^/]+)$/);
+            if (req.method === 'GET' && paymentLookup) {
+                const paymentKey = decodeURIComponent(paymentLookup[1]);
+                const payment = paymentsByKey.get(paymentKey);
+                if (!payment) {
+                    send(res, 404, { code: 'NOT_FOUND_PAYMENT', message: '결제 정보를 찾을 수 없습니다.' });
+                    return;
+                }
+                send(res, 200, payment);
+                return;
+            }
+
+            // ------------------------- 자동결제 -------------------------
+            if (req.method === 'POST' && cleanUrl === '/v1/billing/authorizations/issue') {
+                if (payload.authKey === 'FAIL_AUTH') {
+                    send(res, 400, { code: 'INVALID_AUTH_KEY', message: '유효하지 않은 authKey 입니다.' });
+                    return;
+                }
+                const billingKey = 'billing_mock_key_1';
+                billingKeys.add(billingKey);
+                send(res, 200, {
+                    billingKey,
+                    customerKey: payload.customerKey,
+                    authenticatedAt: new Date().toISOString(),
+                    method: { type: '카드' },
+                    card: { company: '신한카드', number: '1234**********5678' }
+                });
+                return;
+            }
+
+            const billingCharge = cleanUrl.match(/^\/v1\/billing\/([^/]+)$/);
+            if (req.method === 'POST' && billingCharge) {
+                const billingKey = decodeURIComponent(billingCharge[1]);
+                if (!billingKeys.has(billingKey)) {
+                    send(res, 404, { code: 'NOT_FOUND_BILLING_KEY', message: '빌링키를 찾을 수 없습니다.' });
+                    return;
+                }
+                if (control.failCharges) {
+                    send(res, 400, { code: 'REJECT_CARD_PAYMENT', message: '카드 한도 초과(테스트)' });
+                    return;
+                }
+                const chargePayment = {
+                    paymentKey: `billing_pk_${payload.orderId}`,
+                    orderId: payload.orderId,
+                    status: 'DONE',
+                    method: '자동결제',
+                    totalAmount: payload.amount,
+                    approvedAt: new Date().toISOString(),
+                    receipt: { url: 'https://mock.tosspayments.com/receipt/billing' },
+                    card: { company: '신한카드' }
+                };
+                paymentsByKey.set(chargePayment.paymentKey, chargePayment);
+                paymentsByOrder.set(chargePayment.orderId, chargePayment);
+                send(res, 200, chargePayment);
+                return;
+            }
+
+            if (req.method === 'DELETE' && billingCharge) {
+                const billingKey = decodeURIComponent(billingCharge[1]);
+                billingKeys.delete(billingKey);
+                send(res, 200, {});
+                return;
+            }
+
+            send(res, 404, { code: 'NOT_FOUND', message: 'unknown endpoint' });
         });
     });
 
     return new Promise((resolve) => {
-        server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port, calls }));
+        server.listen(0, '127.0.0.1', () => resolve({
+            server,
+            port: server.address().port,
+            calls,
+            control,
+            billingKeys,
+            /** 가상계좌 입금 완료 시뮬레이션 (canonical 재조회가 DONE 을 반환하도록 변경) */
+            markDeposit: (orderId) => {
+                const payment = paymentsByOrder.get(orderId);
+                if (!payment) return false;
+                payment.status = 'DONE';
+                payment.approvedAt = new Date().toISOString();
+                return true;
+            },
+            paymentByOrder: (orderId) => paymentsByOrder.get(orderId) || null
+        }));
+    });
+}
+
+// ============================================================================
+// [목 Apps-in-Toss 파트너 API 서버]
+//   - 토스 로그인 코드 교환(generate-token) / 사용자 조회(login-me)
+//   - 주문 상태 조회(get-order-status)
+// ============================================================================
+function startMockAppsInTossServer({ apiKey, userKey = 'toss_user_smoke_0001' }) {
+    const calls = [];
+    const orders = new Map();
+    const accessToken = 'ait_access_token_smoke';
+
+    const send = (res, status, payload) => {
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(payload));
+    };
+
+    const server = http.createServer((req, res) => {
+        let raw = '';
+        req.on('data', (chunk) => { raw += chunk.toString('utf8'); });
+        req.on('end', () => {
+            let payload = {};
+            try {
+                payload = raw ? JSON.parse(raw) : {};
+            } catch (err) {
+                payload = {};
+            }
+            const cleanUrl = req.url.split('?')[0];
+            calls.push({ url: req.url, method: req.method, headers: req.headers, payload });
+
+            const isLoginMe = req.method === 'GET'
+                && cleanUrl === '/api-partner/v1/apps-in-toss/user/oauth2/login-me';
+
+            // 파트너 API 키 인증 (로그인 사용자 조회는 accessToken 인증)
+            if (!isLoginMe && req.headers.authorization !== `Bearer ${apiKey}`) {
+                send(res, 401, { errorCode: 'INVALID_API_KEY', errorMessage: 'API Key 인증 실패' });
+                return;
+            }
+
+            if (req.method === 'POST' && cleanUrl === '/api-partner/v1/apps-in-toss/user/oauth2/generate-token') {
+                if (payload.authorizationCode !== 'auth_code_smoke') {
+                    send(res, 400, { errorCode: 'INVALID_AUTHORIZATION_CODE', errorMessage: '인증 코드 오류' });
+                    return;
+                }
+                send(res, 200, { accessToken, expiresIn: 3600, tokenType: 'Bearer' });
+                return;
+            }
+
+            if (req.method === 'GET' && cleanUrl === '/api-partner/v1/apps-in-toss/user/oauth2/login-me') {
+                if (req.headers.authorization !== `Bearer ${accessToken}`) {
+                    // generate-token 과 API Key 를 동일 헤더로 쓰지 않도록 실제 구현은 Bearer accessToken
+                    send(res, 401, { errorCode: 'INVALID_ACCESS_TOKEN', errorMessage: 'accessToken 오류' });
+                    return;
+                }
+                send(res, 200, { userKey });
+                return;
+            }
+
+            if (req.method === 'POST' && cleanUrl === '/api-partner/v1/apps-in-toss/order/get-order-status') {
+                const record = orders.get(payload.orderId);
+                if (!record) {
+                    send(res, 200, { orderId: payload.orderId, status: 'NOT_FOUND' });
+                    return;
+                }
+                send(res, 200, {
+                    orderId: payload.orderId,
+                    sku: record.sku,
+                    status: record.status,
+                    reason: record.reason || null,
+                    statusDeterminedAt: new Date().toISOString()
+                });
+                return;
+            }
+
+            send(res, 404, { errorCode: 'NOT_FOUND', errorMessage: 'unknown endpoint' });
+        });
+    });
+
+    return new Promise((resolve) => {
+        server.listen(0, '127.0.0.1', () => resolve({
+            server,
+            port: server.address().port,
+            calls,
+            userKey,
+            setOrder: (orderId, record) => orders.set(orderId, record),
+            orderCount: () => orders.size
+        }));
     });
 }
 
 const FAKE_IMAGE = Buffer.from('fake-jpeg-bytes-for-smoke-test').toString('base64').repeat(20);
 
 /** 단일 시나리오 실행: AI 미설정(A) / AI 설정(B) */
-async function runScenario(label, { withAi, aiBaseUrl }) {
+async function runScenario(label, { withAi, aiBaseUrl, mockAi }) {
     console.log(`\n▶ [${label}] ${withAi ? '실제 AI 호출 경로 (목 LLM 서버)' : 'AI 키 미설정 → 로컬 폴백 경로'}`);
 
     const appPort = 4000 + Math.floor(Math.random() * 500);
@@ -380,6 +632,39 @@ async function runScenario(label, { withAi, aiBaseUrl }) {
                 Array.isArray(scan.recoveryComparison.sosAppliedScores)
                 && scan.recoveryComparison.sosAppliedScores[0] === scan.skinBarrierScore,
                 JSON.stringify(scan.recoveryComparison.sosAppliedScores));
+
+            // [AI 응답 캐싱] 완전히 동일한 입력 재요청 → 벤더 재호출 없이 캐시 히트
+            const callsBefore = mockAi ? mockAi.requestCount() : -1;
+            const scanAgainRes = await requestJson(`${base}/api/skin/scan`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ imageBase64: FAKE_IMAGE, userAge: 28 })
+            });
+            const scanAgain = scanAgainRes.body || {};
+            record(`${label} 동일 입력 재요청 시 AI 캐시 히트(벤더 재호출 0회)`,
+                Boolean(scanAgain.ai && scanAgain.ai.cache && scanAgain.ai.cache.hit === true)
+                && mockAi.requestCount() === callsBefore,
+                `layer=${scanAgain.ai && scanAgain.ai.cache && scanAgain.ai.cache.layer} calls=${mockAi.requestCount()} before=${callsBefore}`);
+
+            // [AI 응답 캐싱] 입력이 다르면 반드시 미스 → stale 응답 재사용 금지
+            const scanDiffRes = await requestJson(`${base}/api/skin/scan`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ imageBase64: `${FAKE_IMAGE.slice(0, -8)}DIFF==`, userAge: 28 })
+            });
+            const scanDiff = scanDiffRes.body || {};
+            record(`${label} 입력 변경 시 AI 캐시 미스(모델 재호출)`,
+                Boolean(scanDiff.ai && scanDiff.ai.cache && scanDiff.ai.cache.hit === false)
+                && mockAi.requestCount() > callsBefore,
+                `hit=${scanDiff.ai && scanDiff.ai.cache && scanDiff.ai.cache.hit} calls=${mockAi.requestCount()}`);
+
+            const cacheStatusRes = await requestJson(`${base}/api/ai/cache/status`);
+            record(`${label} AI 캐시 관제 API(히트/절감액)`,
+                cacheStatusRes.status === 200
+                && cacheStatusRes.body.cache.metrics.hits >= 1
+                && cacheStatusRes.body.cache.metrics.savedCalls >= 1
+                && cacheStatusRes.body.cache.metrics.estimatedUsdSaved >= 0,
+                `hits=${cacheStatusRes.body.cache && cacheStatusRes.body.cache.metrics.hits}`);
         } else {
             record(`${label} AI 미설정 시 폴백(applied=false)`,
                 scan.ai && scan.ai.applied === false && scan.ai.fallbackUsed === true);
@@ -702,6 +987,26 @@ async function runSupabasePersistenceScenario() {
         record('시나리오 D 주문 상태가 PAID 로 갱신',
             orderRows.some((r) => r.status === 'PAID'),
             orderRows.map((r) => r.status).join(','));
+
+        // [자동결제] 구독 원장도 DB 에 기록되는지 (재시작 후 스케줄러 복원 대상)
+        const billingDiag = await requestJson(`${base}/api/glow/diagnose`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nickname: '구독영속화뮤즈', monthlyBeautySpendManwon: 20 })
+        });
+        const billingIssue = await requestJson(`${base}/api/billing/issue`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken: billingDiag.body.sessionToken, startTrial: true })
+        });
+        await sleep(200);
+        const billingRows = supa.rows('glow_muse_billing_subscriptions');
+        record('시나리오 D 자동결제 구독 원장 DB 기록(빌링키 암호화)',
+            billingIssue.status === 200
+            && billingRows.length === 1
+            && Boolean(billingRows[0].encrypted_payload)
+            && !JSON.stringify(billingRows[0]).includes('"billingKey":"'),
+            `subscriptions=${billingRows.length}`);
     } finally {
         first.child.kill();
         await sleep(300);
@@ -723,7 +1028,14 @@ async function runSupabasePersistenceScenario() {
         });
         record('시나리오 D 서버 재시작 후 세션 DB 복원(Read-Through)',
             hookRes.body.status === 'HOOK_CHECKIN_SUCCESS' && hookRes.body.remainingCredits === 88,
-            `status=${hookRes.body.status} remaining=${hookRes.body.remainingCredits}`);
+            `status=${hookRes.body.status} remaining=${hookRes.body.remainingCredits} message=${hookRes.body.message || ''}`);
+
+        const billingStatusRes = await requestJson(`http://127.0.0.1:${second.port}/api/billing/status`);
+        record('시나리오 D 서버 재시작 후 자동결제 구독 DB 복원(스케줄러 인식)',
+            billingStatusRes.status === 200
+            && billingStatusRes.body.billing.counts.total >= 1
+            && billingStatusRes.body.billing.counts.active >= 1,
+            `total=${billingStatusRes.body.billing && billingStatusRes.body.billing.counts.total}`);
     } finally {
         second.child.kill();
     }
@@ -791,6 +1103,513 @@ async function runSupabaseFailureScenario() {
     }
 }
 
+/**
+ * [시나리오 F] 토스 웹훅 — 가상계좌 입금 확인 + 자동결제(빌링) 갱신
+ * - 가상계좌는 승인 직후 잠금 유지(WAITING_FOR_DEPOSIT) → 입금 웹훅 수신 후 해제
+ * - 웹훅 본문은 신뢰하지 않고 토스 API 재조회(canonical) 결과만 반영
+ * - 동일 transmission-id 재전송은 멱등 처리(크레딧 이중 지급 없음)
+ */
+async function runWebhookBillingScenario() {
+    console.log('\n▶ [시나리오 F] 토스 웹훅(가상계좌 입금) + 자동결제(빌링)');
+
+    const secretKey = 'test_sk_webhook_mock_secret_9999';
+    const webhookToken = 'wh_path_token_smoke';
+    const adminToken = 'billing_admin_smoke';
+    const toss = await startMockTossServer({ secretKey });
+    const appPort = 5500 + Math.floor(Math.random() * 150);
+
+    const { child, port } = await startAppServer({
+        PORT: String(appPort),
+        VIP_ANNUAL_PRICE: '79000',
+        MONETIZATION_PRICE: '9900',
+        TRIAL_DAYS: '21',
+        VIP_CREDIT_CAP: '100',
+        STARTER_CREDIT_CAP: '30',
+        APP_OWNER_ID: 'SMOKE_WEBHOOK_OWNER',
+        ENCRYPTION_MASTER_KEY: 'f'.repeat(64),
+        TOSS_PAYMENTS_CLIENT_KEY: 'test_ck_webhook_client',
+        TOSS_PAYMENTS_SECRET_KEY: secretKey,
+        TOSS_PAYMENTS_API_BASE_URL: `http://127.0.0.1:${toss.port}/v1`,
+        PUBLIC_BASE_URL: `http://127.0.0.1:${appPort}`,
+        TOSS_WEBHOOK_PATH_TOKEN: webhookToken,
+        TOSS_BILLING_ADMIN_TOKEN: adminToken,
+        BILLING_SCHEDULER_ENABLED: 'false',
+        AIT_IAP_ADMIN_TOKEN: 'iap_admin_smoke'
+    });
+
+    const base = `http://127.0.0.1:${port}`;
+    const webhookUrl = (token) => `${base}/api/webhooks/toss${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    const postWebhook = (payload, transmissionId, token = webhookToken) => requestJson(webhookUrl(token), {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'tosspayments-webhook-transmission-id': transmissionId,
+            'tosspayments-webhook-transmission-time': new Date().toISOString()
+        },
+        body: JSON.stringify(payload)
+    });
+
+    try {
+        // 1) 설정 노출
+        const configRes = await requestJson(`${base}/api/config`);
+        record('시나리오 F 웹훅·자동결제 설정 노출',
+            configRes.body.webhook && configRes.body.webhook.endpoint === `${base}/api/webhooks/toss`
+            && configRes.body.webhook.pathTokenConfigured === true
+            && configRes.body.billing.mode === 'TOSS_LIVE'
+            && configRes.body.billing.schedulerEnabled === false,
+            `webhook=${configRes.body.webhook && configRes.body.webhook.endpoint} billing=${configRes.body.billing && configRes.body.billing.mode}`);
+
+        const diagRes = await requestJson(`${base}/api/glow/diagnose`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nickname: '웹훅뮤즈', monthlyBeautySpendManwon: 30 })
+        });
+        const sessionToken = diagRes.body.sessionToken;
+
+        // 2) 가상계좌 주문 생성 — 서버가 계좌 발급 옵션을 확정
+        const orderRes = await requestJson(`${base}/api/payment/order`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionToken,
+                planTier: 'VIP_ANNUAL',
+                paymentMethod: 'VIRTUAL_ACCOUNT',
+                customerName: '가상뮤즈'
+            })
+        });
+        const checkout = orderRes.body.checkout || {};
+        const orderId = orderRes.body.orderId;
+        record('시나리오 F 가상계좌 주문 생성(수단·계좌옵션 확정)',
+            orderRes.status === 200
+            && checkout.method === 'VIRTUAL_ACCOUNT'
+            && checkout.virtualAccount
+            && checkout.virtualAccount.customerName === '가상뮤즈',
+            `orderId=${orderId}`);
+
+        // 3) 가상계좌 승인 → 계좌 발급 + 잠금 유지
+        const vaRes = await requestJson(`${base}/api/payment/unlock`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, paymentKey: 'va_pk_smoke_1', orderId })
+        });
+        record('시나리오 F 가상계좌 발급 후 입금 대기(잠금 유지)',
+            vaRes.body.status === 'AWAITING_DEPOSIT'
+            && vaRes.body.virtualAccount
+            && vaRes.body.virtualAccount.accountNumber === '10023345678901'
+            && vaRes.body.remainingCredits === 0,
+            `status=${vaRes.body.status} account=${vaRes.body.virtualAccount && vaRes.body.virtualAccount.accountNumber}`);
+
+        const beforeDeposit = await requestJson(`${base}/api/session/report?sessionToken=${encodeURIComponent(sessionToken)}`);
+        record('시나리오 F 입금 전 리포트 접근 차단',
+            beforeDeposit.status === 403 && beforeDeposit.body.status === 'HARD_PAYWALL_BLOCKED',
+            beforeDeposit.body.status);
+
+        // 4) 위조 웹훅 (잘못된 경로 토큰) → 401
+        const badTokenRes = await postWebhook(
+            { eventType: 'PAYMENT_STATUS_CHANGED', data: { orderId, status: 'DONE' } },
+            'wh_bad_token_1',
+            'wrong_token'
+        );
+        record('시나리오 F 잘못된 경로 토큰 웹훅 거절', badTokenRes.status === 401, `status=${badTokenRes.status}`);
+
+        // 5) 입금 전 웹훅 + 잘못된 secret → canonical(WAITING_FOR_DEPOSIT)만 신뢰 → 지급 없음
+        const fakeDepositRes = await postWebhook(
+            { createdAt: new Date().toISOString(), orderId, secret: 'FORGED_SECRET', status: 'DONE', transactionKey: 'tx_fake' },
+            'wh_fake_deposit_1'
+        );
+        const afterFake = await requestJson(`${base}/api/session/report?sessionToken=${encodeURIComponent(sessionToken)}`);
+        record('시나리오 F 위조 입금 웹훅으로 크레딧 미지급(멱등·검증)',
+            fakeDepositRes.status === 200
+            && fakeDepositRes.body.result === 'AWAITING_DEPOSIT'
+            && afterFake.status === 403,
+            `result=${fakeDepositRes.body.result} report=${afterFake.body.status}`);
+
+        // 6) 실제 입금 완료 → canonical DONE → 정당한 secret 과 함께 웹훅 수신 → 지급
+        toss.markDeposit(orderId);
+        const depositPayload = {
+            createdAt: new Date().toISOString(),
+            orderId,
+            secret: 'va_secret_smoke_ok',
+            status: 'DONE',
+            transactionKey: 'tx_deposit_ok_1'
+        };
+        const depositRes = await postWebhook(depositPayload, 'wh_deposit_ok_1');
+        record('시나리오 F 입금 웹훅 수신 → 잠금 해제·크레딧 지급',
+            depositRes.status === 200
+            && depositRes.body.result === 'FULFILLED'
+            && depositRes.body.remainingCredits === 90,
+            `result=${depositRes.body.result} remaining=${depositRes.body.remainingCredits}`);
+
+        const duplicateRes = await postWebhook(depositPayload, 'wh_deposit_ok_1');
+        record('시나리오 F 동일 transmission-id 재전송 멱등 처리',
+            duplicateRes.status === 200 && duplicateRes.body.duplicate === true,
+            `duplicate=${duplicateRes.body.duplicate}`);
+
+        // 6-1) 토스 API 일시 장애 → 503 으로 재전송 유도, 같은 transmission-id 재전송은 재처리되어야 함
+        toss.control.failLookup = true;
+        const outageRes = await postWebhook(
+            { ...depositPayload, transactionKey: 'tx_deposit_retry' },
+            'wh_outage_retry_1'
+        );
+        toss.control.failLookup = false;
+        const retryRes = await postWebhook(
+            { ...depositPayload, transactionKey: 'tx_deposit_retry' },
+            'wh_outage_retry_1'
+        );
+        record('시나리오 F 토스 API 장애 시 503 → 동일 ID 재전송 재처리',
+            outageRes.status === 503
+            && outageRes.body.retryable === true
+            && retryRes.status === 200
+            && retryRes.body.duplicate !== true
+            && ['ALREADY_FULFILLED', 'FULFILLED'].includes(retryRes.body.result),
+            `outage=${outageRes.status} retry=${retryRes.status}/${retryRes.body.result}`);
+
+        const reportRes = await requestJson(`${base}/api/session/report?sessionToken=${encodeURIComponent(sessionToken)}`);
+        record('시나리오 F 입금 후 리포트 조회(폴링 경로) 정상',
+            reportRes.status === 200
+            && reportRes.body.status === 'UNLOCKED'
+            && reportRes.body.remainingCredits === 90,
+            `remaining=${reportRes.body.remainingCredits}`);
+
+        const statusRes = await requestJson(`${base}/api/payment/status?orderId=${encodeURIComponent(orderId)}`);
+        record('시나리오 F 가상계좌 주문 상태 PAID 전이',
+            statusRes.status === 200
+            && statusRes.body.order.status === 'PAID'
+            && statusRes.body.order.paymentMethod === 'VIRTUAL_ACCOUNT'
+            && Boolean(statusRes.body.order.virtualAccount),
+            `status=${statusRes.body.order && statusRes.body.order.status}`);
+
+        const unknownRes = await postWebhook(
+            { eventType: 'PAYMENT_STATUS_CHANGED', data: { orderId: 'MG_UNKNOWN_ORDER', status: 'DONE' } },
+            'wh_unknown_order_1'
+        );
+        record('시나리오 F 우리 주문 아닌 웹훅은 200 무시(재전송 중단)',
+            unknownRes.status === 200 && unknownRes.body.ignored === true,
+            `ignored=${unknownRes.body.ignored}`);
+
+        // ------------------------------------------------------------------
+        // [자동결제] customerKey → 빌링키 발급 → 21일 체험 즉시 부여
+        // ------------------------------------------------------------------
+        const ckRes = await requestJson(`${base}/api/billing/customer-key`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken })
+        });
+        record('시나리오 F 자동결제 고객 식별키 파생(세션 원문 비노출)',
+            ckRes.status === 200
+            && /^MG_[a-f0-9]{34}$/.test(ckRes.body.customerKey || ''),
+            `customerKey=${ckRes.body.customerKey && ckRes.body.customerKey.slice(0, 8)}…`);
+
+        const issueRes = await requestJson(`${base}/api/billing/issue`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, authKey: 'auth_key_smoke_ok', startTrial: true })
+        });
+        const subscriptionId = issueRes.body.subscription && issueRes.body.subscription.subscriptionId;
+        record('시나리오 F 빌링키 발급 + 21일 체험 즉시 부여',
+            issueRes.status === 200
+            && issueRes.body.status === 'BILLING_SUBSCRIPTION_ACTIVE'
+            && issueRes.body.subscription.status === 'ACTIVE'
+            && issueRes.body.subscription.billingKeyMasked
+            && issueRes.body.trialAccessGranted === true,
+            `subscription=${subscriptionId} nextCharge=${issueRes.body.subscription && issueRes.body.subscription.nextChargeAt}`);
+
+        const afterTrial = await requestJson(`${base}/api/session/report?sessionToken=${encodeURIComponent(sessionToken)}`);
+        record('시나리오 F 체험 권한 지급(누적 크레딧 +100)',
+            afterTrial.status === 200 && afterTrial.body.remainingCredits === 190,
+            `remaining=${afterTrial.body.remainingCredits}`);
+
+        // 재등록(카드 교체) 시 체험 크레딧 중복 지급 금지
+        const reissueTrialRes = await requestJson(`${base}/api/billing/issue`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, authKey: 'auth_key_smoke_ok', startTrial: true })
+        });
+        const afterReissue = await requestJson(`${base}/api/session/report?sessionToken=${encodeURIComponent(sessionToken)}`);
+        record('시나리오 F 카드 재등록 시 체험 크레딧 중복 지급 방지',
+            reissueTrialRes.status === 200
+            && reissueTrialRes.body.subscription.subscriptionId === subscriptionId
+            && afterReissue.body.remainingCredits === 190,
+            `remaining=${afterReissue.body.remainingCredits}`);
+
+        const issueFailRes = await requestJson(`${base}/api/billing/issue`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, authKey: 'FAIL_AUTH', startTrial: true })
+        });
+        record('시나리오 F 빌링키 발급 실패 시 402 + 명확한 코드',
+            issueFailRes.status === 402
+            && issueFailRes.body.status === 'BILLING_ISSUE_FAILED'
+            && issueFailRes.body.code === 'INVALID_AUTH_KEY',
+            `code=${issueFailRes.body.code}`);
+
+        // ------------------------------------------------------------------
+        // [자동결제] 갱신 청구 성공 → 실패/재시도 → 복구
+        // ------------------------------------------------------------------
+        const chargeRes = await requestJson(`${base}/api/billing/charge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+            body: JSON.stringify({ subscriptionId, force: true })
+        });
+        record('시나리오 F 자동결제 갱신 청구 성공(빌링키)',
+            chargeRes.status === 200
+            && chargeRes.body.status === 'BILLING_CHARGED'
+            && chargeRes.body.entitlement
+            && chargeRes.body.entitlement.remainingCredits === 290,
+            `remaining=${chargeRes.body.entitlement && chargeRes.body.entitlement.remainingCredits}`);
+
+        const unauthorizedCharge = await requestJson(`${base}/api/billing/charge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subscriptionId, force: true })
+        });
+        record('시나리오 F 관리자 토큰 없는 청구 차단', unauthorizedCharge.status === 403);
+
+        toss.control.failCharges = true;
+        const failedCharge = await requestJson(`${base}/api/billing/charge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+            body: JSON.stringify({ subscriptionId, force: true })
+        });
+        record('시나리오 F 갱신 실패 → 실패 횟수·재시도 일시 기록',
+            failedCharge.status === 402
+            && failedCharge.body.status === 'BILLING_CHARGE_FAILED'
+            && failedCharge.body.failedAttempts === 1
+            && Boolean(failedCharge.body.nextChargeAt),
+            `attempts=${failedCharge.body.failedAttempts} next=${failedCharge.body.nextChargeAt}`);
+
+        toss.control.failCharges = false;
+        const recoveredCharge = await requestJson(`${base}/api/billing/charge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+            body: JSON.stringify({ subscriptionId, force: true })
+        });
+        record('시나리오 F 재시도 성공 시 실패 카운터 초기화',
+            recoveredCharge.status === 200
+            && recoveredCharge.body.subscription.failedAttempts === 0,
+            `attempts=${recoveredCharge.body.subscription && recoveredCharge.body.subscription.failedAttempts}`);
+
+        const cancelRes = await requestJson(`${base}/api/billing/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, deleteKey: true })
+        });
+        record('시나리오 F 자동결제 해지 + 토스 빌링키 삭제',
+            cancelRes.status === 200
+            && cancelRes.body.status === 'SUBSCRIPTION_CANCELED'
+            && cancelRes.body.subscription.status === 'CANCELED'
+            && toss.calls.some((c) => c.url.includes('/v1/billing/') && !c.url.includes('authorizations')),
+            `status=${cancelRes.body.subscription && cancelRes.body.subscription.status}`);
+
+        // 7) BILLING_DELETED 웹훅 (토스 측 빌링키 삭제) → 청구 차단
+        const reissueRes = await requestJson(`${base}/api/billing/issue`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, authKey: 'auth_key_smoke_ok', startTrial: false })
+        });
+        const reissuedId = reissueRes.body.subscription && reissueRes.body.subscription.subscriptionId;
+        const billingDeletedRes = await postWebhook(
+            { eventType: 'BILLING_DELETED', createdAt: new Date().toISOString(), data: { billingKey: 'billing_mock_key_1' } },
+            'wh_billing_deleted_1'
+        );
+        record('시나리오 F BILLING_DELETED 웹훅 → 구독 차단 반영',
+            billingDeletedRes.status === 200
+            && billingDeletedRes.body.result === 'BILLING_DELETED_APPLIED',
+            `result=${billingDeletedRes.body.result}`);
+
+        const deletedCharge = await requestJson(`${base}/api/billing/charge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+            body: JSON.stringify({ subscriptionId: reissuedId, force: true })
+        });
+        record('시나리오 F 삭제된 빌링키로 재청구 차단',
+            deletedCharge.status === 402
+            && deletedCharge.body.code === 'BILLING_KEY_DELETED',
+            `code=${deletedCharge.body.code}`);
+    } finally {
+        child.kill();
+        toss.server.close();
+    }
+}
+
+/**
+ * [시나리오 G] App-in-Toss 인앱결제(SDK 지급 콜백)
+ * - 토스 로그인(authorizationCode) → userKey + 단기 loginToken
+ * - 주문 상태 서버 검증(PAYMENT_COMPLETED + SKU 일치) 후 멱등 지급
+ * - 중복 orderId / SKU 불일치 / 미완료 상태 / 환불 동기화 검증
+ */
+async function runAppsInTossScenario() {
+    console.log('\n▶ [시나리오 G] App-in-Toss 인앱결제 (목 파트너 API)');
+
+    const apiKey = 'ait_api_key_smoke';
+    const aitAdminToken = 'iap_admin_smoke';
+    const ait = await startMockAppsInTossServer({ apiKey, userKey: 'toss_user_smoke_0001' });
+    const appPort = 5800 + Math.floor(Math.random() * 150);
+
+    const { child, port } = await startAppServer({
+        PORT: String(appPort),
+        VIP_ANNUAL_PRICE: '79000',
+        STARTER_CREDIT_CAP: '30',
+        VIP_CREDIT_CAP: '100',
+        ENCRYPTION_MASTER_KEY: 'g'.repeat(64),
+        AIT_API_KEY: apiKey,
+        AIT_API_BASE_URL: `http://127.0.0.1:${ait.port}`,
+        AIT_APP_ID: 'app-glow-muse-smoke',
+        AIT_SESSION_SECRET: 'ait_session_secret_smoke_1234567890',
+        AIT_IAP_SKU_VIP_ANNUAL: 'sku.vip.annual',
+        AIT_IAP_SKU_STARTER_PACK: 'sku.starter.30',
+        AIT_IAP_ADMIN_TOKEN: aitAdminToken,
+        AIT_IAP_TIMEOUT_MS: '5000'
+    });
+
+    const base = `http://127.0.0.1:${port}`;
+
+    try {
+        const configRes = await requestJson(`${base}/api/config`);
+        record('시나리오 G IAP LIVE 모드·SKU 카탈로그 노출',
+            configRes.body.iap.mode === 'LIVE'
+            && configRes.body.iap.skusConfigured === 2
+            && Array.isArray(configRes.body.iap.products)
+            && configRes.body.iap.products.length === 2,
+            `mode=${configRes.body.iap.mode} skus=${configRes.body.iap.skusConfigured}`);
+
+        const productsRes = await requestJson(`${base}/api/iap/products`);
+        record('시나리오 G 인앱 상품 목록(콘솔 SKU 매핑)',
+            productsRes.status === 200
+            && productsRes.body.products.some((p) => p.planTier === 'VIP_ANNUAL' && p.sku === 'sku.vip.annual'),
+            `count=${productsRes.body.products && productsRes.body.products.length}`);
+
+        const diagRes = await requestJson(`${base}/api/glow/diagnose`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nickname: '앱인토스뮤즈', monthlyBeautySpendManwon: 30 })
+        });
+        const sessionToken = diagRes.body.sessionToken;
+
+        // 1) 토스 로그인 → userKey + loginToken
+        const loginRes = await requestJson(`${base}/api/iap/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, authorizationCode: 'auth_code_smoke', referrer: 'DEFAULT' })
+        });
+        const loginToken = loginRes.body.loginToken;
+        const userKey = loginRes.body.userKey;
+        record('시나리오 G 토스 로그인 코드 교환 + userKey 바인딩',
+            loginRes.status === 200
+            && loginRes.body.status === 'IAP_LOGIN_OK'
+            && userKey === ait.userKey
+            && typeof loginToken === 'string'
+            && loginToken.includes('.'),
+            `userKey=${loginRes.body.userKeyMasked}`);
+
+        const badLoginRes = await requestJson(`${base}/api/iap/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, authorizationCode: 'expired_code' })
+        });
+        record('시나리오 G 만료/위조 인증코드 거절',
+            badLoginRes.status === 401 && badLoginRes.body.status === 'IAP_LOGIN_FAILED',
+            `status=${badLoginRes.status}`);
+
+        // 2) 결제 완료 주문 지급
+        ait.setOrder('AIT_ORD_VIP_1', { sku: 'sku.vip.annual', status: 'PAYMENT_COMPLETED' });
+        const grantRes = await requestJson(`${base}/api/iap/grant`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, orderId: 'AIT_ORD_VIP_1', sku: 'sku.vip.annual', userKey, loginToken })
+        });
+        record('시나리오 G 인앱결제 지급(서버 주문 검증 후)',
+            grantRes.status === 200
+            && grantRes.body.status === 'IAP_GRANTED'
+            && grantRes.body.grant === true
+            && grantRes.body.remainingCredits === 90
+            && grantRes.body.mode === 'LIVE',
+            `remaining=${grantRes.body.remainingCredits} mode=${grantRes.body.mode}`);
+
+        const dupGrant = await requestJson(`${base}/api/iap/grant`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, orderId: 'AIT_ORD_VIP_1', sku: 'sku.vip.annual', userKey, loginToken })
+        });
+        record('시나리오 G 동일 orderId 재지급 멱등(크레딧 이중 지급 없음)',
+            dupGrant.status === 200
+            && dupGrant.body.alreadyGranted === true
+            && dupGrant.body.remainingCredits === 90,
+            `remaining=${dupGrant.body.remainingCredits}`);
+
+        // 3) 로그인 토큰 없이 지급 시도 → 거절
+        ait.setOrder('AIT_ORD_NO_TOKEN', { sku: 'sku.vip.annual', status: 'PAYMENT_COMPLETED' });
+        const noTokenRes = await requestJson(`${base}/api/iap/grant`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, orderId: 'AIT_ORD_NO_TOKEN', sku: 'sku.vip.annual', userKey })
+        });
+        record('시나리오 G loginToken 없는 지급 요청 차단',
+            noTokenRes.status === 402 && noTokenRes.body.code === 'LOGIN_TOKEN_REQUIRED',
+            `code=${noTokenRes.body.code}`);
+
+        // 4) SKU 불일치 / 미완료 / 환불 상태 거절
+        ait.setOrder('AIT_ORD_MISMATCH', { sku: 'sku.starter.30', status: 'PAYMENT_COMPLETED' });
+        const mismatchRes = await requestJson(`${base}/api/iap/grant`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, orderId: 'AIT_ORD_MISMATCH', sku: 'sku.vip.annual', userKey, loginToken })
+        });
+        record('시나리오 G 주문 SKU 불일치 지급 거절',
+            mismatchRes.status === 402 && mismatchRes.body.code === 'SKU_MISMATCH',
+            `code=${mismatchRes.body.code}`);
+
+        ait.setOrder('AIT_ORD_PENDING', { sku: 'sku.vip.annual', status: 'ORDER_IN_PROGRESS' });
+        const pendingRes = await requestJson(`${base}/api/iap/grant`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, orderId: 'AIT_ORD_PENDING', sku: 'sku.vip.annual', userKey, loginToken })
+        });
+        record('시나리오 G 미완료 주문 지급 거절',
+            pendingRes.status === 402 && pendingRes.body.code === 'ORDER_STATUS_ORDER_IN_PROGRESS',
+            `code=${pendingRes.body.code}`);
+
+        // 5) 환불 동기화 → 권한 회수
+        ait.setOrder('AIT_ORD_VIP_1', { sku: 'sku.vip.annual', status: 'REFUNDED' });
+        const syncRes = await requestJson(`${base}/api/iap/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-admin-token': aitAdminToken },
+            body: JSON.stringify({ orderId: 'AIT_ORD_VIP_1', userKey })
+        });
+        record('시나리오 G 환불 동기화 → IAP 주문 REFUNDED 처리',
+            syncRes.status === 200
+            && syncRes.body.status === 'IAP_SYNC_OK'
+            && syncRes.body.syncStatus === 'REFUNDED'
+            && syncRes.body.changed === true
+            && syncRes.body.record && syncRes.body.record.status === 'REFUNDED',
+            `changed=${syncRes.body.changed} syncStatus=${syncRes.body.syncStatus}`);
+
+        const lockedReport = await requestJson(`${base}/api/session/report?sessionToken=${encodeURIComponent(sessionToken)}`);
+        record('시나리오 G 환불 후 기능 재잠금(권한 회수)',
+            lockedReport.status === 403 && lockedReport.body.status === 'REFUNDED_LOCKED',
+            lockedReport.body.status);
+
+        const refundedGrant = await requestJson(`${base}/api/iap/grant`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, orderId: 'AIT_ORD_VIP_1', sku: 'sku.vip.annual', userKey, loginToken })
+        });
+        record('시나리오 G 환불된 주문 재지급 차단',
+            refundedGrant.status === 402 && refundedGrant.body.code === 'ORDER_REFUNDED',
+            `code=${refundedGrant.body.code}`);
+
+        // 6) 파트너 API 호출이 실제로 발생했는지(토큰 교환·userKey 조회·주문 상태)
+        record('시나리오 G 파트너 API(mTLS/Bearer) 호출 경로 검증',
+            ait.calls.some((c) => c.url.includes('/user/oauth2/generate-token'))
+            && ait.calls.some((c) => c.url.includes('/user/oauth2/login-me'))
+            && ait.calls.some((c) => c.url.includes('/order/get-order-status')),
+            `calls=${ait.calls.length}`);
+    } finally {
+        child.kill();
+        ait.server.close();
+    }
+}
+
 async function main() {
     console.log('====================================================================');
     console.log('🧪 [MuseGlow AI v5.0] 실제 AI 연동 & 결제 게이트웨이 통합 스모크 테스트');
@@ -801,8 +1620,10 @@ async function main() {
 
     try {
         await runScenario('시나리오 A', { withAi: false });
-        await runScenario('시나리오 B', { withAi: true, aiBaseUrl });
+        await runScenario('시나리오 B', { withAi: true, aiBaseUrl, mockAi: mock });
         await runTossLiveScenario();
+        await runWebhookBillingScenario();
+        await runAppsInTossScenario();
         await runSupabasePersistenceScenario();
         await runSupabaseFailureScenario();
     } finally {

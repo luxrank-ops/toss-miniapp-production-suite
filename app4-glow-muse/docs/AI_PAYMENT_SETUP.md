@@ -150,7 +150,8 @@ curl http://localhost:3003/api/config        # ai + payments 블록
 **미설정 시에도 앱은 그대로 동작**하며, DB 장애 시에도 자동으로 인메모리로 폴백합니다.
 
 ### 설정 순서
-1. Supabase 대시보드 → **SQL Editor**에서 `supabase/migrations/006_create_runtime_persistence_tables.sql` 실행
+1. Supabase 대시보드 → **SQL Editor**에서 `supabase/migrations/` 의 마이그레이션을 번호 순서대로 실행
+   (`006_...` 영속화 → `007_...` 웹훅/자동결제 → `008_...` IAP → `009_...` AI 캐시)
 2. `.env`에 아래 두 줄 추가 후 서버 재시작
 ```env
 SUPABASE_URL=https://xxxxxxxx.supabase.co
@@ -180,10 +181,146 @@ curl http://localhost:3003/api/persistence/status   # 영속화 상태·성공/�
 
 ---
 
-## 6. 아직 남아 있는 것 (다음 단계)
+## 6. 프로덕션 확장 — 웹훅 · 자동결제 · 인앱결제 · AI 캐시
 
-- [x] ~~**Supabase 영속화**~~ — 완료 (`006` 마이그레이션 + 영속화 계층)
-- [ ] **토스페이먼츠 웹훅(가상계좌·정기결제)** — 현재는 즉시 승인(카드)만 지원
-- [ ] **App-in-Toss 인앱 결제 SDK** — 토스 미니앱 전용 결제는 파트너 콘솔 승인 후 별도 연동 필요
-- [ ] **AI 응답 캐싱** — 동일 입력 재요청 시 비용 절감(현재는 매 호출 신규 추론)
-- [ ] **Supabase RLS 활성화** — 운영 전 `006` 마이그레이션 하단 주석의 RLS 정책 적용 권장
+- [x] **Supabase 영속화** — `006` 마이그레이션 + Write/Read-Through · 서킷 브레이커
+- [x] **토스페이먼츠 웹훅(가상계좌·정기결제)** — `007` 마이그레이션 + `/api/webhooks/toss`
+- [x] **App-in-Toss 인앱 결제 SDK** — `008` 마이그레이션 + 지급 콜백 서버 검증
+- [x] **AI 응답 캐싱** — `009` 마이그레이션 + 메모리 LRU · Supabase Read-Through
+- [ ] **Supabase RLS 활성화** — 운영 전 `006`~`009` 마이그레이션 하단 주석의 RLS 정책 적용 권장
+- [ ] **앱인토스 파트너 콘솔 심사** — IAP 상품(SKU) 등록·mTLS 인증서 발급 후 실결제 전환
+
+### 6-1. 토스페이먼츠 웹훅 (가상계좌 입금 · 결제 상태 변경 · 빌링키 삭제)
+
+**등록 URL** (토스 개발자센터 → 웹훅)
+```
+https://{PUBLIC_BASE_URL}/api/webhooks/toss?token={TOSS_WEBHOOK_PATH_TOKEN}
+```
+
+| 이벤트 | 본문 구조 | 처리 |
+| :--- | :--- | :--- |
+| `PAYMENT_STATUS_CHANGED` | `{ eventType, createdAt, data: Payment }` | `DONE` → 권한 지급 / `CANCELED·EXPIRED·ABORTED` → 회수 |
+| `DEPOSIT_CALLBACK` | `{ createdAt, secret, status, transactionKey, orderId }` (평면) | 입금 확인 → 지급, 입금 오류 → `AWAITING_DEPOSIT` 복귀 |
+| `BILLING_DELETED` | `{ eventType, data: { billingKey } }` | 해당 구독 `DELETED_BY_TOSS` 차단 |
+| `CANCEL_STATUS_CHANGED` | `{ eventType, data }` | 감사 로그만 기록 |
+
+**보안 원칙**
+- 결제 웹훅에는 **서명 헤더가 없습니다**(서명은 payout/seller 이벤트 전용).
+  따라서 본문의 `status`/`amount` 를 절대 신뢰하지 않고 `GET /v1/payments/{paymentKey}` 또는
+  `GET /v1/payments/orders/{orderId}` 로 **재조회한 canonical 결과만** 반영합니다.
+- `DEPOSIT_CALLBACK.secret` 은 최초 승인 응답의 `secret` 과 상수 시간 비교합니다.
+- `tosspayments-webhook-transmission-id` 기준 멱등 처리 → 토스 재전송(최대 7회)에도 중복 지급 없음.
+- 응답 코드: `200`(정상·중복·무시) / `400`(JSON 파손) / `401`(경로 토큰 불일치) / `503`(토스 API 일시 장애 → 재전송 유도)
+
+```env
+TOSS_WEBHOOK_PATH_TOKEN=무작위_공유비밀값      # 권장 (스캐너 차단)
+TOSS_WEBHOOK_VERIFY_CANONICAL=true            # 실결제 모드에서는 항상 canonical 검증
+TOSS_WEBHOOK_TIMEOUT_MS=8000
+```
+
+**가상계좌 흐름**: 주문 생성(`paymentMethod=VIRTUAL_ACCOUNT`) → `requestPayment` → 계좌 발급
+(`AWAITING_DEPOSIT`, 잠금 유지) → 입금 → 웹훅 → 지급. 클라이언트는 `GET /api/session/report`
+폴링으로 잠금 해제를 확인합니다(5초 간격, 최대 30분).
+
+### 6-2. 자동결제(빌링) — 카드 등록 · 정기 갱신 · 재시도 · 해지
+
+```env
+TOSS_BILLING_ENABLED=auto                      # TOSS_LIVE 키가 있으면 활성
+BILLING_SCHEDULER_ENABLED=auto                 # 운영 첫 배포는 false 권장 → 검증 후 on
+BILLING_SCHEDULER_INTERVAL_MS=3600000          # 1시간
+BILLING_RETRY_MAX=3
+BILLING_RETRY_DELAY_HOURS=24
+BILLING_RENEWAL_PERIOD_DAYS=365
+TOSS_BILLING_ADMIN_TOKEN=관리자_전용_토큰
+```
+
+| API | 설명 |
+| :--- | :--- |
+| `POST /api/billing/customer-key` | 세션 → HMAC `customerKey` 파생(세션 원문 비노출) |
+| `POST /api/billing/issue` | `authKey` → 빌링키 발급 + 21일 체험 즉시 부여 |
+| `GET /api/billing/subscription?sessionToken=` | 구독 상태(빌링키 마스킹) |
+| `POST /api/billing/charge` | 관리자 수동 청구(`force`) — `Idempotency-Key` 적용 |
+| `POST /api/billing/renewals/run` | 만기 구독 일괄 갱신(스케줄러와 동일 로직) |
+| `POST /api/billing/cancel` | 해지 + 토스 빌링키 삭제 |
+
+- 갱신 청구는 최대 60초 소요 → 타임아웃 65초 + `Idempotency-Key`
+- 실패 시 `failedAttempts` 누적, `retryDelayHours` 후 재시도, 한도 초과 시 `PAST_DUE`
+- **자동결제는 토스페이먼츠와 별도 계약이 필요합니다.** 미계약 상태에서 `issue` 는 `NOT_SUPPORTED_METHOD` 로 실패하며, 서버는 이를 402 로 반환하고 기존 결제 흐름은 계속 동작합니다.
+
+### 6-3. App-in-Toss 인앱 결제(IAP)
+
+```
+[클라이언트] IAP.createOneTimePurchaseOrder({ options: { sku, processProductGrant } })
+   → processProductGrant({ orderId }) 안에서 POST /api/iap/grant
+   → [서버] 토스 로그인 userKey + loginToken 검증 → get-order-status 재조회
+   → PAYMENT_COMPLETED + SKU 일치 확인 → 멱등 지급 → true 반환 (30초 내)
+```
+
+| API | 설명 |
+| :--- | :--- |
+| `POST /api/iap/login` | `authorizationCode` → userKey 조회 + 10분 loginToken(세션 바인딩) |
+| `POST /api/iap/grant` | 지급 콜백 — 주문 상태·SKU·userKey 검증 후 멱등 지급 |
+| `POST /api/iap/sync` | 관리자 재동기화 — 환불 시 권한 회수·지급 누락 복구 |
+| `GET /api/iap/products` | 콘솔 SKU ↔ 내부 플랜 카탈로그 |
+| `GET /api/iap/status` | 모드·mTLS·SKU 설정 상태 |
+
+```env
+AIT_API_KEY=...                     # 없으면 SANDBOX_SIMULATION(개발 전용 시뮬레이션 지급)
+AIT_APP_ID=...
+AIT_MTLS_CERT_PATH=/secrets/ait-cert.pem
+AIT_MTLS_KEY_PATH=/secrets/ait-key.pem
+AIT_MTLS_CA_PATH=/secrets/ait-ca.pem
+AIT_MTLS_KEY_PASSPHRASE=...
+AIT_IAP_SKU_VIP_ANNUAL=sku.vip.annual
+AIT_IAP_SKU_STARTER_PACK=sku.starter.30
+AIT_IAP_SKU_VIP_SUBSCRIPTION=
+AIT_IAP_ADMIN_TOKEN=관리자_전용_토큰
+AIT_SESSION_SECRET=32자_이상_랜덤
+AIT_IAP_ALLOW_UNBOUND_GRANT=false   # true 로 두면 loginToken 없이도 지급(권장하지 않음)
+AIT_IAP_SANDBOX_GRANT=false         # 로컬 데모에서만 true (운영 기본 false)
+```
+
+- SDK 는 `frontend/js/iap.js` 가 **호스트 주입 전역(`window.AppsInTossWebFramework`) 또는
+  `window.__APPS_IN_TOSS_SDK_URL__` 이 있을 때만** 사용합니다. 일반 브라우저에서는 외부 요청 없이
+  비활성화되고 기존 토스페이먼츠 결제창으로 폴백합니다(앱 번들 의존성 0 유지).
+- `processProductGrant` 가 30초 내 `true` 를 반환하지 못하면 토스가 자동 환불하므로,
+  서버는 즉시 명확한 오류 코드를 반환합니다.
+- 구버전 토스 앱(Android < 5.231.0 / iOS < 5.230.0)은 `getCompletedOrRefundedOrders` 가
+  `undefined` 일 수 있으므로 방어적으로 처리합니다.
+
+### 6-4. AI 응답 캐싱
+
+- 캐시 키 = `SHA-256(네임스페이스 + 요청종류 + provider + model + temperature + maxTokens
+  + 시스템/사용자 프롬프트 해시 + 이미지 바이트 해시)`
+- 동일 입력 재요청 시 **메모리 LRU → Supabase Read-Through** 순으로 조회, 벤더 호출 0회
+- 응답 본문은 **AES-256-GCM** 암호화 저장, 원본 이미지·프롬프트는 저장하지 않음
+- 동일 키 동시 요청은 **Single-Flight** 로 병합해 중복 과금 방지
+- TTL: 스캔 6시간 / 리포트 24시간(설정 가능), LRU 500개
+
+```env
+AI_CACHE_ENABLED=true
+AI_CACHE_VERSION=v1
+AI_CACHE_TTL_MS=86400000
+AI_CACHE_SKIN_SCAN_TTL_MS=21600000
+AI_CACHE_REPORT_TTL_MS=86400000
+AI_CACHE_MAX_ENTRIES=500
+AI_CACHE_MAX_PAYLOAD_BYTES=65536
+AI_CACHE_UNIT_COST_USD=0.0035
+AI_CACHE_PERSIST=true
+```
+
+```bash
+curl http://localhost:3003/api/ai/cache/status    # 히트율·절감 추정액
+curl -X POST http://localhost:3003/api/ai/cache/purge -H "x-admin-token: ..."
+```
+
+### 6-5. 검증
+
+```bash
+cd app4-glow-muse
+npm run verify   # QA 100/100 + 통합 스모크 94항목
+```
+
+스모크 테스트는 목 토스페이먼츠·목 앱인토스·목 LLM 서버를 띄워
+카드 승인, 가상계좌 입금 웹훅(위조·멱등·canonical), 빌링키 발급/갱신/실패 재시도/해지,
+IAP 로그인·지급·중복·환불, AI 캐시 히트/미스까지 실제 HTTP 경로로 검증합니다.

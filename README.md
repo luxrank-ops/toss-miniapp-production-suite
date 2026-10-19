@@ -64,7 +64,7 @@ node app4-glow-muse/backend/server.js
 ```bash
 cd app4-glow-muse
 cp .env.example .env      # AI 키 + 토스페이먼츠 키 + Supabase 키 주입
-npm run verify            # QA 감사(100/100) + 통합 스모크 테스트(52항목)
+npm run verify            # QA 감사(100/100) + 통합 스모크 테스트(94항목)
 ```
 
 영속화는 `supabase/migrations/006_create_runtime_persistence_tables.sql` 실행 후

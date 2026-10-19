@@ -59,12 +59,21 @@
          */
         (function () {
             var params = new URLSearchParams(window.location.search);
-            var payload = {
-                type: 'TOSS_PAYMENT_SUCCESS',
-                paymentKey: params.get('paymentKey'),
-                orderId: params.get('orderId'),
-                amount: params.get('amount') ? Number(params.get('amount')) : null
-            };
+
+            // [자동결제] requestBillingAuth 성공은 paymentKey 대신 authKey 를 전달합니다.
+            var isBillingAuth = Boolean(params.get('authKey')) && !params.get('paymentKey');
+            var payload = isBillingAuth
+                ? {
+                    type: 'TOSS_BILLING_AUTH_SUCCESS',
+                    authKey: params.get('authKey'),
+                    customerKey: params.get('customerKey')
+                }
+                : {
+                    type: 'TOSS_PAYMENT_SUCCESS',
+                    paymentKey: params.get('paymentKey'),
+                    orderId: params.get('orderId'),
+                    amount: params.get('amount') ? Number(params.get('amount')) : null
+                };
 
             try {
                 if (window.opener && !window.opener.closed) {

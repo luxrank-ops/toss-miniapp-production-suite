@@ -23,7 +23,12 @@
  * ============================================================================
  */
 
-const { getAiConfig, maskSensitiveString } = require('../config/envLoader');
+const { getAiConfig, getAiCacheConfig, maskSensitiveString } = require('../config/envLoader');
+// [AI 응답 캐싱] 동일 입력 재요청 시 벤더 호출 비용을 절감 (LRU + Supabase + Single-Flight)
+const aiCache = require('./aiCache');
+
+/** 벤더별 호출 타임아웃 상한 (빌링 결제 60초 규격과 분리) */
+const MAX_AI_TIMEOUT_MS = 120000;
 
 /** 재시도 대상 HTTP 상태 코드 (일시적 오류) */
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
@@ -390,32 +395,123 @@ async function generateJsonObject(params = {}) {
         };
     }
 
-    const result = await vendorCall(config, callArgs);
-    const latencyMs = Date.now() - startedAt;
+    const cacheConfig = getAiCacheConfig();
+    const requestKind = params.requestKind || (image ? 'SKIN_SCAN' : 'PREMIUM_REPORT');
+    const { cacheKey, imageHash } = aiCache.buildCacheKey({
+        requestKind,
+        systemPrompt: callArgs.systemPrompt,
+        userPrompt: callArgs.userPrompt,
+        image,
+        temperature: callArgs.temperature,
+        maxTokens: callArgs.maxTokens,
+        provider: config.provider,
+        model: config.model
+    });
 
-    if (!result || !result.ok) {
-        return {
-            ok: false,
-            data: null,
-            error: (result && result.error) || 'AI 호출 실패',
-            meta: { ...meta, latencyMs, fallbackUsed: true }
-        };
+    // [STEP 1] 캐시 조회 (메모리 LRU → Supabase Read-Through)
+    if (cacheConfig.enabled) {
+        const cached = await aiCache.get(cacheKey);
+        if (cached.hit) {
+            return {
+                ok: true,
+                data: cached.data,
+                meta: {
+                    ...meta,
+                    latencyMs: Date.now() - startedAt,
+                    fallbackUsed: false,
+                    imageSource: image ? image.source : null,
+                    cache: {
+                        hit: true,
+                        layer: cached.layer,
+                        cacheKeyPrefix: cacheKey.slice(0, 12),
+                        ttlMs: aiCache.resolveTtlMs(requestKind)
+                    }
+                }
+            };
+        }
     }
 
-    const parsed = extractJsonObject(result.text);
-    if (!parsed) {
+    // [STEP 2] Single-Flight 로 동일 키 동시 요청 병합 후 벤더 호출
+    const producer = async () => {
+        const vendorStartedAt = Date.now();
+        const result = await vendorCall(config, {
+            ...callArgs,
+            timeoutMs: Math.min(Number(callArgs.timeoutMs) || MAX_AI_TIMEOUT_MS, MAX_AI_TIMEOUT_MS)
+        });
+        const latencyMs = Date.now() - vendorStartedAt;
+
+        if (!result || !result.ok) {
+            return {
+                ok: false,
+                data: null,
+                error: (result && result.error) || 'AI 호출 실패',
+                latencyMs,
+                imageSource: image ? image.source : null
+            };
+        }
+
+        const parsed = extractJsonObject(result.text);
+        if (!parsed) {
+            return {
+                ok: false,
+                data: null,
+                error: 'AI 응답을 JSON으로 파싱하지 못했습니다.',
+                latencyMs,
+                imageSource: image ? image.source : null
+            };
+        }
+
+        if (cacheConfig.enabled) {
+            await aiCache.set({
+                cacheKey,
+                requestKind,
+                provider: config.provider,
+                model: config.model,
+                imageHash,
+                data: parsed,
+                ttlMs: aiCache.resolveTtlMs(requestKind)
+            });
+        }
+
+        return {
+            ok: true,
+            data: parsed,
+            latencyMs,
+            imageSource: image ? image.source : null
+        };
+    };
+
+    const { value: outcome, shared } = cacheConfig.enabled
+        ? await aiCache.withSingleFlight(cacheKey, producer)
+        : { value: await producer(), shared: false };
+    const latencyMs = Date.now() - startedAt;
+
+    if (!outcome.ok) {
         return {
             ok: false,
             data: null,
-            error: 'AI 응답을 JSON으로 파싱하지 못했습니다.',
+            error: outcome.error,
             meta: { ...meta, latencyMs, fallbackUsed: true }
         };
     }
 
     return {
         ok: true,
-        data: parsed,
-        meta: { ...meta, latencyMs, fallbackUsed: false, imageSource: image ? image.source : null }
+        data: outcome.data,
+        meta: {
+            ...meta,
+            latencyMs,
+            fallbackUsed: false,
+            imageSource: outcome.imageSource,
+            cache: cacheConfig.enabled
+                ? {
+                    hit: shared,
+                    layer: shared ? 'SINGLE_FLIGHT' : 'MISS_STORED',
+                    cacheKeyPrefix: cacheKey.slice(0, 12),
+                    ttlMs: aiCache.resolveTtlMs(requestKind)
+                }
+                : { hit: false, layer: 'DISABLED' }
+        }
     };
 }
 

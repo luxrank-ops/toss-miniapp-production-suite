@@ -36,10 +36,32 @@ const paymentOrdersStore = new Map();
 /** 주문 상태 상수 */
 const ORDER_STATUS = {
     CREATED: 'CREATED',
+    AWAITING_DEPOSIT: 'AWAITING_DEPOSIT', // 가상계좌 발급 완료 · 입금 대기
     PAID: 'PAID',
     FAILED: 'FAILED',
-    CANCELED: 'CANCELED'
+    CANCELED: 'CANCELED',
+    PARTIAL_CANCELED: 'PARTIAL_CANCELED',
+    EXPIRED: 'EXPIRED',
+    ABORTED: 'ABORTED'
 };
+
+/** 지원 결제수단 (토스페이먼츠 표기와 내부 표기 모두 허용) */
+const PAYMENT_METHODS = {
+    CARD: 'CARD',
+    VIRTUAL_ACCOUNT: 'VIRTUAL_ACCOUNT',
+    EASY_PAY: 'EASY_PAY'
+};
+
+function normalizePaymentMethod(value) {
+    const raw = String(value || 'CARD').trim().toUpperCase();
+    if (['VIRTUAL_ACCOUNT', '가상계좌', 'VIRTUALACCOUNT'].includes(raw)) {
+        return PAYMENT_METHODS.VIRTUAL_ACCOUNT;
+    }
+    if (['EASY_PAY', '간편결제', 'TOSS_PAY'].includes(raw)) {
+        return PAYMENT_METHODS.EASY_PAY;
+    }
+    return PAYMENT_METHODS.CARD;
+}
 
 /**
  * 플랜 티어 문자열을 서버 설정 금액으로 변환합니다(클라이언트 금액 신뢰 금지).
@@ -89,6 +111,8 @@ function createOrderId(planTier) {
  */
 function createOrder(input = {}) {
     const { sessionToken, planTier } = input;
+    const paymentMethod = normalizePaymentMethod(input.paymentMethod);
+    const paymentSource = (input.paymentSource || 'TOSS_PAYMENTS').toUpperCase();
 
     if (!sessionToken) {
         return { ok: false, error: '세션 토큰이 없습니다. 먼저 온보딩 스캔을 진행해 주세요.' };
@@ -111,6 +135,11 @@ function createOrder(input = {}) {
         trialDays: plan.trialDays,
         orderName: plan.orderName,
         status: ORDER_STATUS.CREATED,
+        paymentMethod,
+        paymentSource,
+        customerName: input.customerName ? String(input.customerName).slice(0, 50) : null,
+        bank: input.bank ? String(input.bank).slice(0, 30) : null,
+        subscriptionId: input.subscriptionId || null,
         mode: config.payments.mode,
         appOwnerIdMasked: config.appOwnerIdMasked,
         settlementHolderMasked: config.settlementHolderMasked,
@@ -132,9 +161,19 @@ function createOrder(input = {}) {
             orderName: order.orderName,
             amountKrw: order.amountKrw,
             currency: 'KRW',
+            method: paymentMethod,
             clientKey: config.payments.mode === 'TOSS_LIVE' ? config.payments.clientKey : null,
             successUrl: config.payments.publicBaseUrl ? config.payments.successUrl : null,
-            failUrl: config.payments.publicBaseUrl ? config.payments.failUrl : null
+            failUrl: config.payments.publicBaseUrl ? config.payments.failUrl : null,
+            // 가상계좌는 클라이언트가 은행/입금자명을 지정해야 합니다.
+            virtualAccount: paymentMethod === PAYMENT_METHODS.VIRTUAL_ACCOUNT
+                ? {
+                    bank: order.bank,
+                    customerName: order.customerName,
+                    useEscrow: false,
+                    validHours: 24
+                }
+                : null
         }
     };
 }
@@ -210,20 +249,70 @@ async function confirmPayment(input = {}) {
             };
         }
 
-        order.status = ORDER_STATUS.PAID;
+        const tossStatus = (parsed && parsed.status) ? parsed.status : 'DONE';
+        const isVirtualAccount = Boolean(
+            (parsed && parsed.virtualAccount)
+            || order.paymentMethod === PAYMENT_METHODS.VIRTUAL_ACCOUNT
+            || tossStatus === 'WAITING_FOR_DEPOSIT'
+        );
+
         order.paymentKey = paymentKey;
         order.updatedAt = new Date().toISOString();
+
+        if (isVirtualAccount && tossStatus !== 'DONE') {
+            // ----------------------------------------------------------------
+            // [가상계좌] 승인 = 계좌 발급 완료. 아직 돈이 입금되지 않았으므로
+            // 절대 크레딧을 지급하지 않고 AWAITING_DEPOSIT 상태로 대기합니다.
+            // 입금 완료는 DEPOSIT_CALLBACK / PAYMENT_STATUS_CHANGED 웹훅이 처리합니다.
+            // ----------------------------------------------------------------
+            const va = (parsed && parsed.virtualAccount) || {};
+            order.status = ORDER_STATUS.AWAITING_DEPOSIT;
+            order.virtualAccount = {
+                accountNumber: va.accountNumber || null,
+                bankCode: va.bankCode || null,
+                bank: va.bank || order.bank || null,
+                customerName: va.customerName || order.customerName || null,
+                dueDate: va.dueDate || null,
+                accountHolder: va.accountHolder || null
+            };
+            order.tossReceipt = {
+                paymentKey,
+                orderId: (parsed && parsed.orderId) ? parsed.orderId : orderId,
+                method: (parsed && parsed.method) ? parsed.method : '가상계좌',
+                status: tossStatus,
+                approvedAt: null,
+                totalAmount: (parsed && parsed.totalAmount) ? parsed.totalAmount : order.amountKrw,
+                receiptUrl: (parsed && parsed.receipt && parsed.receipt.url) ? parsed.receipt.url : null,
+                virtualAccount: order.virtualAccount,
+                // [보안] 웹훅 secret 은 암호화된 영수증 안에만 보관합니다.
+                secret: (parsed && parsed.secret) ? String(parsed.secret).slice(0, 50) : null
+            };
+            persistOrder(order);
+
+            return {
+                ok: true,
+                awaitingDeposit: true,
+                receipt: order.tossReceipt,
+                virtualAccount: order.virtualAccount,
+                orderStatus: order.status
+            };
+        }
+
+        order.status = ORDER_STATUS.PAID;
         order.tossReceipt = {
             paymentKey,
             orderId: parsed && parsed.orderId ? parsed.orderId : orderId,
             method: parsed && parsed.method ? parsed.method : null,
-            status: parsed && parsed.status ? parsed.status : 'DONE',
+            status: tossStatus,
             approvedAt: (parsed && parsed.approvedAt) ? parsed.approvedAt : new Date().toISOString(),
             totalAmount: (parsed && parsed.totalAmount) ? parsed.totalAmount : order.amountKrw,
             receiptUrl: (parsed && parsed.receipt && parsed.receipt.url) ? parsed.receipt.url : null,
             cardCompany: (parsed && parsed.card && parsed.card.company) ? parsed.card.company : null,
             cardNumber: (parsed && parsed.card && parsed.card.number) ? parsed.card.number : null,
-            installmentPlanMonths: (parsed && parsed.card && parsed.card.installmentPlanMonths) || 0
+            installmentPlanMonths: (parsed && parsed.card && parsed.card.installmentPlanMonths) || 0,
+            secret: (parsed && parsed.secret) ? String(parsed.secret).slice(0, 50) : null,
+            virtualAccount: (parsed && parsed.virtualAccount) || null,
+            billingKeyMasked: (parsed && parsed.billingKey) ? maskSensitiveString(parsed.billingKey) : null
         };
         persistOrder(order);
 
@@ -305,6 +394,147 @@ async function cancelPayment(input = {}) {
 }
 
 /**
+ * [공통] 토스페이먼츠 REST API 호출 (Basic 인증 + 타임아웃 + JSON 파싱)
+ * - 결제 승인/취소뿐 아니라 웹훅 검증용 결제 조회, 자동결제(빌링) API 에서도 재사용합니다.
+ * @param {string} method HTTP 메서드
+ * @param {string} apiPath '/payments/confirm' 형식
+ * @param {Object|null} body 요청 본문
+ * @param {{ timeoutMs?: number, idempotencyKey?: string }} options
+ * @returns {Promise<{ ok: boolean, status: number, data: Object|null, error?: string, code?: string }>}
+ */
+async function tossApiRequest(method, apiPath, body = null, options = {}) {
+    const config = getDynamicConfig();
+    const payments = config.payments;
+
+    if (payments.mode !== 'TOSS_LIVE') {
+        return { ok: false, status: 0, data: null, error: '실결제 모드가 아닙니다.', code: 'SANDBOX_MODE' };
+    }
+
+    const authHeader = 'Basic ' + Buffer.from(`${payments.secretKey}:`).toString('base64');
+    const headers = {
+        Authorization: authHeader,
+        'Content-Type': 'application/json'
+    };
+    if (options.idempotencyKey) {
+        headers['Idempotency-Key'] = String(options.idempotencyKey).slice(0, 300);
+    }
+
+    const timeoutMs = Math.max(1000, Math.min(Number(options.timeoutMs) || 15000, 70000));
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        const response = await fetch(`${payments.apiBaseUrl}${apiPath}`, {
+            method,
+            headers,
+            body: body ? JSON.stringify(body) : undefined,
+            signal: controller.signal
+        });
+
+        const rawBody = await response.text();
+        let parsed = null;
+        try {
+            parsed = rawBody ? JSON.parse(rawBody) : null;
+        } catch (err) {
+            parsed = null;
+        }
+
+        if (!response.ok) {
+            return {
+                ok: false,
+                status: response.status,
+                data: parsed,
+                error: (parsed && parsed.message) || rawBody.slice(0, 300),
+                code: (parsed && parsed.code) || `HTTP_${response.status}`
+            };
+        }
+
+        return { ok: true, status: response.status, data: parsed };
+    } catch (err) {
+        const isAbort = err && err.name === 'AbortError';
+        return {
+            ok: false,
+            status: 0,
+            data: null,
+            error: isAbort ? `토스페이먼츠 API 타임아웃(${timeoutMs}ms)` : `토스페이먼츠 네트워크 오류: ${err.message}`,
+            code: isAbort ? 'TIMEOUT' : 'NETWORK_ERROR'
+        };
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+/** 웹훅 canonical 검증: paymentKey 로 결제 재조회 */
+async function fetchPaymentByKey(paymentKey, options = {}) {
+    if (!paymentKey) {
+        return { ok: false, data: null, error: 'paymentKey가 없습니다.', code: 'MISSING_PAYMENT_KEY' };
+    }
+    return tossApiRequest('GET', `/payments/${encodeURIComponent(paymentKey)}`, null, options);
+}
+
+/** 웹훅 canonical 검증: orderId 로 결제 재조회 (가상계좌 입금 콜백에 paymentKey가 없음) */
+async function fetchPaymentByOrderId(orderId, options = {}) {
+    if (!orderId) {
+        return { ok: false, data: null, error: 'orderId가 없습니다.', code: 'MISSING_ORDER_ID' };
+    }
+    return tossApiRequest('GET', `/payments/orders/${encodeURIComponent(orderId)}`, null, options);
+}
+
+/** 자동결제(빌링) 빌링키 발급 */
+async function issueBillingKey({ authKey, customerKey }, options = {}) {
+    return tossApiRequest('POST', '/billing/authorizations/issue', { authKey, customerKey }, options);
+}
+
+/** 자동결제(빌링) 승인 — 토스 규격상 최대 60초 소요 */
+async function chargeBillingKey({ billingKey, customerKey, amount, orderId, orderName, customerName, customerEmail }, options = {}) {
+    if (!billingKey) {
+        return { ok: false, data: null, error: 'billingKey가 없습니다.', code: 'MISSING_BILLING_KEY' };
+    }
+    const payload = {
+        customerKey,
+        amount,
+        orderId,
+        orderName
+    };
+    if (customerName) payload.customerName = String(customerName).slice(0, 50);
+    if (customerEmail) payload.customerEmail = String(customerEmail).slice(0, 100);
+
+    return tossApiRequest(
+        'POST',
+        `/billing/${encodeURIComponent(billingKey)}`,
+        payload,
+        { ...options, timeoutMs: options.timeoutMs || 65000 }
+    );
+}
+
+/** 빌링키 삭제(해지) */
+async function deleteBillingKey(billingKey, options = {}) {
+    return tossApiRequest('DELETE', `/billing/${encodeURIComponent(billingKey)}`, null, options);
+}
+
+/**
+ * 주문 상태 변경 (웹훅·자동결제·IAP 공용)
+ * @param {string} orderId
+ * @param {string} status ORDER_STATUS 값
+ * @param {Object} patch 추가로 반영할 필드
+ * @returns {Object|null}
+ */
+function updateOrderStatus(orderId, status, patch = {}) {
+    const order = paymentOrdersStore.get(orderId);
+    if (!order) {
+        return null;
+    }
+    Object.assign(order, patch, { status, updatedAt: new Date().toISOString() });
+    persistOrder(order);
+    return order;
+}
+
+/** 가상계좌 발급 완료 → 입금 대기 상태로 기록 */
+function markOrderAwaitingDeposit(orderId, patch = {}) {
+    return updateOrderStatus(orderId, ORDER_STATUS.AWAITING_DEPOSIT, patch);
+}
+
+/**
  * 주문 조회 (클라이언트 노출용으로 민감키는 마스킹)
  */
 function getOrder(orderId, { includeSession = false } = {}) {
@@ -321,7 +551,12 @@ function getOrder(orderId, { includeSession = false } = {}) {
         orderName: order.orderName,
         status: order.status,
         mode: order.mode,
+        paymentMethod: order.paymentMethod || 'CARD',
+        paymentSource: order.paymentSource || 'TOSS_PAYMENTS',
         paymentKeyMasked: order.paymentKey ? maskSensitiveString(order.paymentKey) : null,
+        virtualAccount: order.virtualAccount || null,
+        entitlementsGranted: Boolean(order.entitlementsGranted),
+        fulfilledAt: order.fulfilledAt || null,
         appOwnerIdMasked: order.appOwnerIdMasked,
         settlementHolderMasked: order.settlementHolderMasked,
         createdAt: order.createdAt,
@@ -388,7 +623,12 @@ function getPaymentStatus() {
         publicBaseUrlConfigured: Boolean(payments.publicBaseUrl),
         vipAnnualPrice: config.vipAnnualPrice,
         starterPrice: config.monetizationPrice,
-        supportsRefund: payments.enabled
+        supportsRefund: payments.enabled,
+        supportedMethods: ['CARD', 'VIRTUAL_ACCOUNT'],
+        supportsVirtualAccount: true,
+        supportsBilling: config.billing.enabled,
+        webhookConfigured: Boolean(payments.publicBaseUrl),
+        webhookUrl: payments.publicBaseUrl ? `${payments.publicBaseUrl}/api/webhooks/toss` : null
     };
 }
 
@@ -396,6 +636,16 @@ module.exports = {
     createOrder,
     confirmPayment,
     cancelPayment,
+    tossApiRequest,
+    fetchPaymentByKey,
+    fetchPaymentByOrderId,
+    issueBillingKey,
+    chargeBillingKey,
+    deleteBillingKey,
+    updateOrderStatus,
+    markOrderAwaitingDeposit,
+    normalizePaymentMethod,
+    PAYMENT_METHODS,
     hydrateOrder,
     persistOrder,
     getOrder,

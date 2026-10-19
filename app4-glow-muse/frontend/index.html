@@ -707,13 +707,41 @@
                     <strong id="sheetPriceText" style="color:var(--accent-main);">₩79,000</strong>
                 </div>
             </div>
+            <!-- [결제수단 선택] 카드 즉시승인 / 가상계좌(무통장입금 · 웹훅으로 입금 확인) -->
+            <div id="paymentMethodSelector" role="group" aria-label="결제수단 선택" style="margin-top:12px; display:flex; gap:8px;">
+                <button type="button" class="payment-method-btn active" data-method="CARD" aria-pressed="true">💳 카드 간편결제</button>
+                <button type="button" class="payment-method-btn" data-method="VIRTUAL_ACCOUNT" aria-pressed="false">🏦 가상계좌 입금</button>
+            </div>
+            <p id="paymentMethodHint" style="margin:8px 2px 0; font-size:11px; line-height:1.5; color:var(--text-muted);">
+                카드는 서버 최종 승인 즉시 잠금이 해제됩니다. 가상계좌는 계좌 발급 후 입금이 확인되는 순간 웹훅으로 자동 해제됩니다.
+            </p>
+
+            <!-- [가상계좌 발급 정보] 입금 전까지 표시되며, 웹훅 입금 확인 시 자동으로 잠금 해제됩니다. -->
+            <div id="virtualAccountBox" class="hidden" style="margin-top:10px; padding:12px 14px; border-radius:14px; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.4); font-size:12.5px; line-height:1.7;">
+                <div style="font-weight:800; color:#6ee7b7; margin-bottom:4px;">🏦 가상계좌가 발급되었습니다</div>
+                <div>은행: <strong id="vaBankText">-</strong></div>
+                <div>계좌번호: <strong id="vaNumberText">-</strong></div>
+                <div>입금기한: <strong id="vaDueDateText">-</strong></div>
+                <div style="margin-top:6px; font-size:11px; color:var(--text-secondary);">입금 완료 시 자동으로 처방전이 열립니다. 이 창을 닫아도 입금은 정상 처리됩니다.</div>
+            </div>
+
             <!-- [실제 결제 연동 상태 배지] TOSS_LIVE(실결제) / SANDBOX(시뮬레이션) -->
             <div id="paymentModeBadge" style="margin-top:12px; padding:9px 11px; border-radius:12px; font-size:11.5px; font-weight:700; text-align:center; background:rgba(99,102,241,0.14); border:1px solid rgba(99,102,241,0.4); color:#c7d2fe;">
                 결제 게이트웨이 상태 확인 중...
             </div>
+            <div id="iapModeBadge" class="hidden" style="margin-top:8px; padding:9px 11px; border-radius:12px; font-size:11.5px; font-weight:700; text-align:center; background:rgba(59,130,246,0.14); border:1px solid rgba(59,130,246,0.4); color:#93c5fd;">
+                📱 앱인토스 인앱결제 사용 가능
+            </div>
             <button id="confirmTossPayBtn" type="button" class="toss-pay-confirm-btn">
                 토스페이로 1초 만에 승인하고 전체 처방전 잠금 해제하기
             </button>
+            <button id="restoreIapBtn" type="button" class="hidden" style="margin-top:8px; width:100%; padding:10px; border-radius:12px; border:1px solid rgba(147,197,253,0.4); background:rgba(59,130,246,0.12); color:#93c5fd; font-size:12px; font-weight:800; cursor:pointer;">
+                📱 이전 인앱결제 구매 복원하기
+            </button>
+            <button id="registerBillingBtn" type="button" class="hidden" style="margin-top:8px; width:100%; padding:10px; border-radius:12px; border:1px solid rgba(251,191,36,0.42); background:rgba(251,191,36,0.12); color:#fcd34d; font-size:12px; font-weight:800; cursor:pointer;">
+                🔄 카드 자동결제 등록 (매년 자동 갱신 · 웹훅으로 상태 동기화)
+            </button>
+            <p id="billingStatusText" class="hidden" style="margin:8px 2px 0; font-size:11px; line-height:1.5; color:#fcd34d;"></p>
         </div>
     </div>
 
@@ -795,6 +823,7 @@
         </div>
     </div>
 
+    <script src="/js/iap.js"></script>
     <script src="/js/app.js"></script>
 </body>
 </html>

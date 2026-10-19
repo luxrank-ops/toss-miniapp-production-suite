@@ -16,6 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { getDynamicConfig } = require('../backend/config/envLoader');
 const { encryptSensitiveData, decryptSensitiveData } = require('../backend/security/cryptoManager');
 const {
@@ -32,6 +33,11 @@ const { mergeSkinScanResult } = require('../backend/services/aiEnrichment');
 const { createOrder, resolvePlan, getPaymentStatus } = require('../backend/services/paymentGateway');
 // [QA-08] Supabase 영속화 계층 검증용
 const persistence = require('../backend/services/persistenceStore');
+// [QA-09~12] 웹훅 · 자동결제 · 앱인토스 IAP · AI 응답 캐시 검증용
+const tossWebhookService = require('../backend/services/tossWebhookService');
+const billingService = require('../backend/services/billingService');
+const iapService = require('../backend/services/iapService');
+const aiCacheService = require('../backend/services/aiCache');
 
 async function runQaAudit() {
     const projectRoot = path.resolve(__dirname, '..');
@@ -49,7 +55,7 @@ async function runQaAudit() {
         id: 'QA-01',
         name: '.env.example 동적 플레이스홀더(VIP 연간 패스·크레딧 한도 포함) 규격 검증',
         passed: hasBlankPlaceholders,
-        score: hasBlankPlaceholders ? 10 : 0
+        score: hasBlankPlaceholders ? 8 : 0
     });
 
     // 2. AES-256-GCM 암호화 및 복호화 무결성 검증 (규칙 8)
@@ -65,7 +71,7 @@ async function runQaAudit() {
         id: 'QA-02',
         name: 'AES-256-GCM 양방향 암호화 및 난수 IV 무결성 검증',
         passed: cryptoPassed,
-        score: cryptoPassed ? 10 : 0
+        score: cryptoPassed ? 8 : 0
     });
 
     // 3. [1순위 app-business-evaluator] Hard Paywall & 21일 체험 고LTV 가격 정책 검증
@@ -81,7 +87,7 @@ async function runQaAudit() {
         id: 'QA-03',
         name: '[1순위 BIZ-EVAL] Hard Paywall(10.7%) & 21일 장기 체험 + 고LTV 가격 검증',
         passed: hardPaywallPassed,
-        score: hardPaywallPassed ? 14 : 0
+        score: hardPaywallPassed ? 12 : 0
     });
 
     // 4. [2순위 top-tier-app-consultant] Nir Eyal Hook + 4주 이원화 회복 곡선 + 최저가/CPA 검증
@@ -99,7 +105,7 @@ async function runQaAudit() {
         id: 'QA-04',
         name: '[2순위 Consultant] 4주 회복 이원화 곡선(SOS vs 방치) & 최저가/청담 CPA 검증',
         passed: consultantPassed,
-        score: consultantPassed ? 16 : 0
+        score: consultantPassed ? 14 : 0
     });
 
     // 5. [3순위 Cross-Store & 4순위 Toss-Top10] AI 추구미 포토 스튜디오 & 라이브 티커/영수증 모달 검증
@@ -116,7 +122,7 @@ async function runQaAudit() {
         id: 'QA-05',
         name: '[3·4순위 Design] AI 포토 스튜디오 Before/After & 실시간 티커 & 처방 영수증 모달 검증',
         passed: designAndInteractionPassed,
-        score: designAndInteractionPassed ? 16 : 0
+        score: designAndInteractionPassed ? 14 : 0
     });
 
     // 6. Pydantic AI 스키마 규격 비즈니스 평가 JSON & Supabase SQL 번호 규칙(001_~005_) 검증
@@ -132,7 +138,7 @@ async function runQaAudit() {
         id: 'QA-06',
         name: 'Pydantic AI 스키마 JSON(9.6점) 및 Supabase SQL 000_ 번호 규칙(001~006) 검증',
         passed: schemaAndSqlPassed,
-        score: schemaAndSqlPassed ? 10 : 0
+        score: schemaAndSqlPassed ? 8 : 0
     });
 
     // 7. [실제 AI 연동 & 실결제 게이트웨이] 폴백 안전성 + 금액 위변조 방어 검증
@@ -184,7 +190,7 @@ async function runQaAudit() {
         id: 'QA-07',
         name: '[실전 연동] AI 게이트웨이 폴백·응답 검증 & 토스페이먼츠 서버 금액 확정(위변조 방어) 검증',
         passed: aiAndPaymentPassed,
-        score: aiAndPaymentPassed ? 12 : 0
+        score: aiAndPaymentPassed ? 10 : 0
     });
 
     // 8. [Supabase 영속화] 마이그레이션 규칙 준수 + DB 미설정 시 무중단 인메모리 폴백 검증
@@ -226,8 +232,151 @@ async function runQaAudit() {
         id: 'QA-08',
         name: '[영속화] Supabase 마이그레이션(006) 규칙 준수 & DB 미설정 시 무중단 인메모리 폴백 검증',
         passed: persistencePassed,
-        score: persistencePassed ? 12 : 0,
+        score: persistencePassed ? 10 : 0,
         detail: persistenceDetail
+    });
+
+    // 9. [토스 웹훅] 가상계좌 입금 콜백(평면 구조) / 결제 상태 변경(중첩 구조) 정규화 & canonical 검증 배선
+    const flatEvent = tossWebhookService.normalizeEvent({
+        orderId: 'QA_ORDER_WEBHOOK',
+        secret: 'qa_secret',
+        status: 'DONE',
+        transactionKey: 'qa_tx'
+    });
+    const nestedEvent = tossWebhookService.normalizeEvent({
+        eventType: 'PAYMENT_STATUS_CHANGED',
+        data: { orderId: 'QA_ORDER_WEBHOOK', paymentKey: 'qa_pk', status: 'DONE' }
+    });
+    const serverSource = fs.readFileSync(path.join(projectRoot, 'backend/server.js'), 'utf8');
+    const webhookPassed =
+        flatEvent.eventType === 'DEPOSIT_CALLBACK' &&
+        nestedEvent.eventType === 'PAYMENT_STATUS_CHANGED' &&
+        nestedEvent.orderId === 'QA_ORDER_WEBHOOK' &&
+        nestedEvent.paymentKey === 'qa_pk' &&
+        tossWebhookService.verifyPathToken(null) === true &&
+        serverSource.includes('/api/webhooks/toss') &&
+        migrationFiles.includes('007_create_toss_webhook_and_billing_tables.sql') &&
+        envExampleContent.includes('TOSS_WEBHOOK_PATH_TOKEN=');
+    checks.push({
+        id: 'QA-09',
+        name: '[웹훅] 가상계좌 DEPOSIT_CALLBACK(평면)·결제상태(중첩) 정규화 & canonical 재검증 배선',
+        passed: webhookPassed,
+        score: webhookPassed ? 4 : 0,
+        detail: `flat=${flatEvent.eventType} nested=${nestedEvent.eventType}`
+    });
+
+    // 10. [자동결제] customerKey 파생·구독/갱신/해지 배선 & 스케줄러 무결성
+    const customerKeyA = billingService.deriveCustomerKey('qa_billing_session');
+    const customerKeyB = billingService.deriveCustomerKey('qa_billing_session');
+    const customerKeyOther = billingService.deriveCustomerKey('qa_billing_other');
+    const billingStatus = billingService.getBillingStatus();
+    const billingPassed =
+        /^MG_[a-f0-9]{34}$/.test(customerKeyA) &&
+        customerKeyA === customerKeyB &&
+        customerKeyA !== customerKeyOther &&
+        typeof billingStatus.mode === 'string' &&
+        typeof billingService.startScheduler === 'function' &&
+        typeof billingService.stopScheduler === 'function' &&
+        migrationFiles.includes('007_create_toss_webhook_and_billing_tables.sql') &&
+        envExampleContent.includes('TOSS_BILLING_ENABLED=') &&
+        envExampleContent.includes('BILLING_SCHEDULER_ENABLED=');
+    checks.push({
+        id: 'QA-10',
+        name: '[자동결제] customerKey HMAC 파생·갱신 주기·해지/스케줄러 및 007 마이그레이션 검증',
+        passed: billingPassed,
+        score: billingPassed ? 4 : 0,
+        detail: `mode=${billingStatus.mode} key=${customerKeyA.slice(0, 8)}…`
+    });
+
+    // 11. [앱인토스 IAP] 로그인 토큰 서명/검증(세션 바인딩) & SKU 카탈로그·008 마이그레이션
+    const qaSessionToken = 'qa_iap_session_token';
+    const qaUserKey = 'qa_toss_user_key';
+    const loginToken = iapService.signLoginToken({
+        userKeyHash: crypto.createHash('sha256').update(qaUserKey).digest('hex'),
+        sessionHash: crypto.createHash('sha256').update(qaSessionToken).digest('hex'),
+        iat: Date.now(),
+        exp: Date.now() + 10 * 60 * 1000
+    });
+    const loginTokenOk = iapService.verifyLoginToken(loginToken, qaSessionToken);
+    const loginTokenTampered = iapService.verifyLoginToken(
+        loginToken.replace(/.$/, (ch) => (ch === 'a' ? 'b' : 'a')),
+        qaSessionToken
+    );
+    const iapCatalog = iapService.getProductCatalog();
+    const iapStatus = iapService.getIapStatus();
+    const iapPassed =
+        loginTokenOk.ok === true &&
+        loginTokenTampered.ok === false &&
+        Array.isArray(iapCatalog) &&
+        typeof iapStatus.mode === 'string' &&
+        migrationFiles.includes('008_create_apps_in_toss_iap_orders.sql') &&
+        envExampleContent.includes('AIT_API_KEY=') &&
+        envExampleContent.includes('AIT_IAP_SKU_VIP_ANNUAL=');
+    checks.push({
+        id: 'QA-11',
+        name: '[앱인토스 IAP] 로그인 토큰 HMAC·세션 바인딩 검증 & SKU 카탈로그/008 마이그레이션',
+        passed: iapPassed,
+        score: iapPassed ? 4 : 0,
+        detail: `mode=${iapStatus.mode} skus=${iapStatus.skusConfigured}`
+    });
+
+    // 12. [AI 응답 캐시] 결정론적 키(입력 변경 시 미스) · 메모리 히트 · TTL/용량 설정 · 009 마이그레이션
+    const cacheKeyA = aiCacheService.buildCacheKey({
+        requestKind: 'SKIN_SCAN',
+        systemPrompt: 'qa-system',
+        userPrompt: 'qa-user',
+        image: { base64: 'QAFakeImageBytes', mimeType: 'image/jpeg' },
+        temperature: 0.4,
+        maxTokens: 800,
+        provider: 'openai',
+        model: 'gpt-4o-qa'
+    });
+    const cacheKeyB = aiCacheService.buildCacheKey({
+        requestKind: 'SKIN_SCAN',
+        systemPrompt: 'qa-system',
+        userPrompt: 'qa-user',
+        image: { base64: 'QAFakeImageBytes', mimeType: 'image/jpeg' },
+        temperature: 0.4,
+        maxTokens: 800,
+        provider: 'openai',
+        model: 'gpt-4o-qa'
+    });
+    const cacheKeyOther = aiCacheService.buildCacheKey({
+        requestKind: 'SKIN_SCAN',
+        systemPrompt: 'qa-system',
+        userPrompt: 'qa-user',
+        image: { base64: 'QAFakeImageBytes-CHANGED', mimeType: 'image/jpeg' },
+        temperature: 0.4,
+        maxTokens: 800,
+        provider: 'openai',
+        model: 'gpt-4o-qa'
+    });
+    const cacheStore = await aiCacheService.set({
+        cacheKey: cacheKeyA.cacheKey,
+        requestKind: 'SKIN_SCAN',
+        provider: 'openai',
+        model: 'gpt-4o-qa',
+        imageHash: cacheKeyA.imageHash,
+        data: { qa: true }
+    });
+    const cacheHit = await aiCacheService.get(cacheKeyA.cacheKey);
+    const cacheStatus = aiCacheService.getCacheStatus();
+    const aiCachePassed =
+        cacheStore.stored === true &&
+        cacheHit.hit === true &&
+        cacheHit.data && cacheHit.data.qa === true &&
+        cacheKeyA.cacheKey === cacheKeyB.cacheKey &&
+        cacheKeyA.cacheKey !== cacheKeyOther.cacheKey &&
+        typeof cacheStatus.enabled === 'boolean' &&
+        migrationFiles.includes('009_create_ai_response_cache.sql') &&
+        envExampleContent.includes('AI_CACHE_ENABLED=') &&
+        envExampleContent.includes('AI_CACHE_TTL_MS=');
+    checks.push({
+        id: 'QA-12',
+        name: '[AI 캐시] 결정론적 키·메모리 히트·TTL/용량 설정 및 009 마이그레이션 검증',
+        passed: aiCachePassed,
+        score: aiCachePassed ? 4 : 0,
+        detail: `hit=${cacheHit.hit} layer=${cacheHit.layer} entries=${cacheStatus.memoryEntries}`
     });
 
     const totalScore = checks.reduce((sum, item) => sum + item.score, 0);
