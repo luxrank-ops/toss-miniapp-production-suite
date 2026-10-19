@@ -38,6 +38,16 @@
         remainingCredits: 0,
         weeklyCheckinCount: 0,
         appOwnerIdMasked: 'TOSS_PARTNER',
+        // [실제 결제 연동] 'TOSS_LIVE' | 'SANDBOX_SIMULATION'
+        paymentMode: 'SANDBOX_SIMULATION',
+        paymentsClientKey: null,
+        // [실제 AI 연동] /api/config 의 ai 블록으로 동기화
+        ai: {
+            enabled: false,
+            mode: 'LOCAL_DETERMINISTIC_FALLBACK',
+            provider: null,
+            model: null
+        },
         currentSkinScanResult: null,
         cameraStream: null,
         goldenSecondsRemaining: 23 * 3600 + 59 * 60 + 42
@@ -115,6 +125,11 @@
     const sheetOwnerText = document.getElementById('sheetOwnerText');
     const sheetPriceText = document.getElementById('sheetPriceText');
     const confirmTossPayBtn = document.getElementById('confirmTossPayBtn');
+    const paymentModeBadge = document.getElementById('paymentModeBadge');
+
+    // AI 엔진 상태 배지 (실제 LLM/Vision 연동 여부 표시)
+    const aiEngineText = document.getElementById('aiEngineText');
+    const scanAiEngineBadge = document.getElementById('scanAiEngineBadge');
 
     // Nir Eyal Hook 요소
     const runDailyCheckinBtn = document.getElementById('runDailyCheckinBtn');
@@ -495,12 +510,43 @@
                     updateCreditDisplay(data.remainingCredits);
                 }
                 renderSkinScanResult(data, true);
-                notifyIsland(`✨ AI 피부 스캔 완료! 장벽 점수 ${data.skinBarrierScore}점 (${data.skinType})`);
+                updateScanAiBadge(data.ai);
+
+                const scanAiInfo = data.ai || {};
+                if (scanAiInfo.applied) {
+                    notifyIsland(`✨ 실제 AI(${String(scanAiInfo.provider || '').toUpperCase()} ${scanAiInfo.model || ''}) 피부 스캔 완료! 장벽 점수 ${data.skinBarrierScore}점`);
+                } else {
+                    notifyIsland(`✨ AI 피부 스캔 완료! 장벽 점수 ${data.skinBarrierScore}점 (${data.skinType})`);
+                }
             }, 1400);
         } catch (err) {
             stepTimers.forEach(clearTimeout);
             scanningHudOverlay.style.display = 'none';
             notifyIsland('⚠️ 스캔 처리 중 오류가 발생했습니다.');
+        }
+    }
+
+    /**
+     * [실제 AI 스캔 표시] 이번 스캔이 실제 Vision 모델로 분석됐는지 배지로 표시합니다.
+     * @param {{ applied?: boolean, provider?: string, model?: string, error?: string }} aiMeta
+     */
+    function updateScanAiBadge(aiMeta) {
+        if (!scanAiEngineBadge) return;
+
+        if (aiMeta && aiMeta.applied) {
+            const provider = String(aiMeta.provider || '').toUpperCase();
+            const latency = aiMeta.latencyMs ? ` · ${(aiMeta.latencyMs / 1000).toFixed(1)}s` : '';
+            scanAiEngineBadge.textContent = `🧠 LIVE AI (${provider})${latency}`;
+            scanAiEngineBadge.style.color = '#6ee7b7';
+            scanAiEngineBadge.title = `실제 Vision 모델(${aiMeta.model || ''})이 이 스캔을 분석했습니다.`;
+        } else if (aiMeta && aiMeta.error) {
+            scanAiEngineBadge.textContent = '🧠 LOCAL 폴백 (AI 오류)';
+            scanAiEngineBadge.style.color = '#fbbf24';
+            scanAiEngineBadge.title = String(aiMeta.error);
+        } else {
+            scanAiEngineBadge.textContent = '🧠 LOCAL 목업 엔진';
+            scanAiEngineBadge.style.color = '#fbbf24';
+            scanAiEngineBadge.title = 'AI 키가 설정되지 않아 로컬 결정론적 엔진으로 동작합니다.';
         }
     }
 
@@ -793,10 +839,77 @@
                 document.getElementById('starterPriceText').textContent = data.formattedPrice;
                 document.getElementById('starterCreditsText').textContent = data.starterCreditCap;
                 sheetOwnerText.textContent = `${data.appOwnerIdMasked} (${data.settlementHolderMasked})`;
+
+                // [실제 AI 연동 상태 동기화]
+                if (data.ai) {
+                    state.ai = {
+                        enabled: Boolean(data.ai.enabled),
+                        mode: data.ai.mode || 'LOCAL_DETERMINISTIC_FALLBACK',
+                        provider: data.ai.provider || null,
+                        model: data.ai.model || null
+                    };
+                }
+                syncAiBadges();
+
+                // [실제 결제 게이트웨이 상태 동기화]
+                if (data.payments) {
+                    state.paymentMode = data.payments.mode || 'SANDBOX_SIMULATION';
+                    state.paymentsClientKey = data.payments.clientKey || null;
+                }
+                syncPaymentModeBadge();
+
                 syncPlanSelectionUI();
             }
         } catch (err) {
             console.error('설정 로드 오류:', err);
+        }
+    }
+
+    /**
+     * [실제 AI 연동 상태 배지 동기화]
+     * - LIVE_AI             : 실제 LLM/Vision 모델이 리포트·스캔을 생성
+     * - LOCAL_DETERMINISTIC : 키 미설정 → 로컬 목업 엔진 (운영자에게 즉시 식별되도록 표시)
+     */
+    function syncAiBadges() {
+        if (!aiEngineText) return;
+
+        if (state.ai.enabled) {
+            const providerLabel = String(state.ai.provider || '').toUpperCase();
+            aiEngineText.textContent = `LIVE · ${providerLabel}`;
+            aiEngineText.style.color = '#6ee7b7';
+            aiEngineText.title = `실제 AI 모델(${state.ai.model})이 분석을 수행합니다.`;
+        } else {
+            aiEngineText.textContent = 'LOCAL · 목업엔진';
+            aiEngineText.style.color = '#fbbf24';
+            aiEngineText.title = 'AI 키가 설정되지 않아 로컬 결정론적 엔진으로 동작합니다. .env에 API 키를 주입하세요.';
+        }
+
+        if (scanAiEngineBadge) {
+            scanAiEngineBadge.textContent = state.ai.enabled
+                ? `🧠 LIVE AI (${String(state.ai.provider || '').toUpperCase()})`
+                : '🧠 LOCAL 목업 엔진';
+            scanAiEngineBadge.style.color = state.ai.enabled ? '#6ee7b7' : '#fbbf24';
+        }
+    }
+
+    /**
+     * [결제 게이트웨이 상태 배지 동기화]
+     * - TOSS_LIVE          : 토스페이먼츠 결제위젯 실결제 (서버 confirm)
+     * - SANDBOX_SIMULATION : 키 미설정 → 데모 승인 흐름
+     */
+    function syncPaymentModeBadge() {
+        if (!paymentModeBadge) return;
+
+        if (state.paymentMode === 'TOSS_LIVE') {
+            paymentModeBadge.textContent = '💳 토스페이먼츠 실결제 모드 · 서버 최종 승인(Server Confirm) 적용';
+            paymentModeBadge.style.background = 'rgba(16,185,129,0.14)';
+            paymentModeBadge.style.borderColor = 'rgba(16,185,129,0.45)';
+            paymentModeBadge.style.color = '#6ee7b7';
+        } else {
+            paymentModeBadge.textContent = '🧪 샌드박스 시뮬레이션 모드 · (TOSS_PAYMENTS_CLIENT_KEY / SECRET_KEY 미설정)';
+            paymentModeBadge.style.background = 'rgba(99,102,241,0.14)';
+            paymentModeBadge.style.borderColor = 'rgba(99,102,241,0.4)';
+            paymentModeBadge.style.color = '#c7d2fe';
         }
     }
 
@@ -934,91 +1047,239 @@
         paymentModal.classList.remove('open');
     });
 
+    // =========================================================================
+    // [실제 토스페이먼츠 결제 연동]
+    //   흐름: 서버 주문 생성(/api/payment/order, 금액 서버 확정)
+    //         → 토스 결제위젯 인증(requestPayment)
+    //         → 리다이렉트 페이지에서 postMessage로 paymentKey 수신
+    //         → 서버 최종 승인(/api/payment/unlock → 토스 /v1/payments/confirm)
+    //   ※ 클라이언트는 금액을 단 한 번도 결정하지 않습니다(변조 원천 차단).
+    // =========================================================================
+    let tossPaymentsSdkPromise = null;
+
+    function loadTossPaymentsSdk() {
+        if (tossPaymentsSdkPromise) {
+            return tossPaymentsSdkPromise;
+        }
+        tossPaymentsSdkPromise = new Promise((resolve, reject) => {
+            if (window.TossPayments) {
+                resolve(window.TossPayments);
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = 'https://js.tosspayments.com/v2/standard';
+            script.async = true;
+            script.onload = () => resolve(window.TossPayments);
+            script.onerror = () => reject(new Error('토스페이먼츠 SDK 로드에 실패했습니다.'));
+            document.head.appendChild(script);
+        });
+        return tossPaymentsSdkPromise;
+    }
+
+    /** 결제창(팝업)이 전달하는 postMessage 또는 localStorage 폴백 결과를 기다립니다. */
+    function waitForTossPaymentResult(timeoutMs = 180000) {
+        return new Promise((resolve) => {
+            let settled = false;
+
+            const finish = (payload) => {
+                if (settled) return;
+                settled = true;
+                window.removeEventListener('message', onMessage);
+                clearTimeout(timer);
+                resolve(payload);
+            };
+
+            function onMessage(event) {
+                const data = event.data;
+                if (!data || typeof data !== 'object') return;
+                if (data.type === 'TOSS_PAYMENT_SUCCESS') {
+                    finish({ ok: true, paymentKey: data.paymentKey, orderId: data.orderId, amount: data.amount });
+                } else if (data.type === 'TOSS_PAYMENT_FAIL') {
+                    finish({ ok: false, error: data.message || '결제가 취소되었습니다.', code: data.code });
+                }
+            }
+
+            window.addEventListener('message', onMessage);
+            const timer = setTimeout(() => finish({ ok: false, error: '결제 응답 대기 시간이 초과되었습니다.' }), timeoutMs);
+
+            // 팝업이 아닌 같은 탭으로 리다이렉트된 경우의 폴백 처리
+            try {
+                const cached = localStorage.getItem('museglow_toss_payment_result');
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    localStorage.removeItem('museglow_toss_payment_result');
+                    if (parsed && parsed.paymentKey) {
+                        finish({ ok: true, paymentKey: parsed.paymentKey, orderId: parsed.orderId, amount: parsed.amount });
+                    }
+                }
+            } catch (err) { /* 무시 */ }
+        });
+    }
+
+    /** 서버에 최종 승인 요청 후 해제된 리포트를 화면에 바인딩합니다. */
+    async function finalizeUnlock(extraPayload = {}) {
+        const res = await fetch('/api/payment/unlock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken: state.sessionToken, ...extraPayload })
+        });
+        const data = await res.json();
+
+        if (data.status !== 'UNLOCKED') {
+            notifyIsland(`⚠️ ${data.message || '결제 승인에 실패했습니다.'}`);
+            return false;
+        }
+
+        applyUnlockedReport(data);
+        return true;
+    }
+
+    /** 해제된 리포트 + 영수증 + AI 엔진 정보를 화면에 렌더링합니다. */
+    function applyUnlockedReport(data) {
+        triggerHaptic([20, 50, 40, 30, 60]);
+        updateCreditDisplay(data.receipt.remainingCredits);
+        const ov = data.unlockedFullReport.overview;
+        const p = data.unlockedFullReport.prescriptions;
+
+        document.getElementById('auraBadgeEl').textContent = ov.museAuraBadge;
+        document.getElementById('auraTitleEl').textContent = ov.museAuraTitle;
+        animateSlotCountUp(document.getElementById('glowScoreEl'), ov.glowIndexScore, 1300, (v) => String(v));
+        animateSlotCountUp(document.getElementById('preventedWasteEl'), ov.preventedWasteKrw, 1600, (v) => `연 ₩${v.toLocaleString('ko-KR')}`);
+
+        document.getElementById('summaryCommentEl').textContent = ov.summaryComment;
+        document.getElementById('bioSkinAgeEl').textContent = ov.bioSkinAgeDiff;
+        document.getElementById('goldenDdayEl').textContent = ov.goldenWindowDday;
+        document.getElementById('unlockReceiptBadge').textContent = `🔓 ${data.receipt.planTier} (-${data.receipt.creditsDeductedForDiagnosis} 🪙 진단차감 완료)`;
+
+        // 영수증 모달 정보 동기화
+        document.getElementById('receiptAuraText').textContent = ov.museAuraTitle;
+        document.getElementById('receiptTotalSavedText').textContent = `₩${ov.preventedWasteKrw.toLocaleString('ko-KR')}`;
+
+        const m = ov.balanceMetrics;
+        document.getElementById('metricBarrierVal').textContent = `${m.barrierGlow}점`;
+        document.getElementById('metricAuraVal').textContent = `${m.auraHarmony}점`;
+        document.getElementById('metricLymphVal').textContent = `${m.lymphDePuff}점`;
+        document.getElementById('metricMetaVal').textContent = `${m.bloodSugarMeta}점`;
+
+        setTimeout(() => {
+            document.getElementById('metricBarrierBar').style.width = `${m.barrierGlow}%`;
+            document.getElementById('metricAuraBar').style.width = `${m.auraHarmony}%`;
+            document.getElementById('metricLymphBar').style.width = `${m.lymphDePuff}%`;
+            document.getElementById('metricMetaBar').style.width = `${m.bloodSugarMeta}%`;
+        }, 60);
+
+        // 4대 처방전 바인딩
+        document.getElementById('p1Title').textContent = p.prescription1_Chugumi.title;
+        document.getElementById('p1Insight').textContent = p.prescription1_Chugumi.coreInsight;
+        document.getElementById('p1List').innerHTML = p.prescription1_Chugumi.actionItems.map((i) => `<li>${i}</li>`).join('');
+        document.getElementById('p1Warning').textContent = p.prescription1_Chugumi.worstWarning;
+
+        document.getElementById('p2Title').textContent = p.prescription2_MedicalHomeLoop.title;
+        document.getElementById('p2Clinic').innerHTML = `<strong>추천 시술:</strong> ${p.prescription2_MedicalHomeLoop.recommendedClinic}`;
+        document.getElementById('p2List').innerHTML = p.prescription2_MedicalHomeLoop.oliveYoungSynergy.map((i) => `<li>${i}</li>`).join('');
+        document.getElementById('p2Warning').textContent = p.prescription2_MedicalHomeLoop.dangerConflict;
+
+        document.getElementById('p3Title').textContent = p.prescription3_HormoneGoldenCalendar.title;
+        document.getElementById('p3Phase').innerHTML = `<strong>${p.prescription3_HormoneGoldenCalendar.currentPhase}</strong><br/>🔥 황금기: ${p.prescription3_HormoneGoldenCalendar.goldenWindow}`;
+        document.getElementById('p3List').innerHTML = p.prescription3_HormoneGoldenCalendar.stepByStepCalendar.map((i) => `<li>${i}</li>`).join('');
+
+        document.getElementById('p4Title').textContent = p.prescription4_DePuffAndBloodSugar.title;
+        document.getElementById('p4Morning').innerHTML = `<strong>💆‍♀️ 모닝 5분 붓기 삭제:</strong> ${p.prescription4_DePuffAndBloodSugar.morningRoutine}`;
+        document.getElementById('p4Meal').innerHTML = `<strong>🥗 혈당 스위치온 식단:</strong> ${p.prescription4_DePuffAndBloodSugar.switchOnMeal}`;
+        document.getElementById('p4Inner').textContent = `💡 ${p.prescription4_DePuffAndBloodSugar.secretInnerBeauty}`;
+
+        paymentModal.classList.remove('open');
+        hardPaywallSection.classList.add('hidden');
+        unlockedSection.classList.remove('hidden');
+
+        const aiInfo = data.ai || {};
+        if (aiInfo.applied) {
+            notifyIsland(`🎉 결제 완료! 🤖 ${String(aiInfo.provider || '').toUpperCase()} ${aiInfo.model || ''} 실제 AI 처방전 생성 완료 (잔여 ${data.receipt.remainingCredits} 🪙)`);
+        } else {
+            notifyIsland(`🎉 하드 페이월 해제 완료! 잔여 크레딧: ${data.receipt.remainingCredits} 🪙`);
+        }
+
+        unlockedSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    /** [TOSS_LIVE] 실제 결제위젯 호출 */
+    async function startTossLivePayment() {
+        notifyIsland('💳 토스페이먼츠 결제 주문을 생성하고 있습니다...');
+
+        // 1) 서버가 금액을 확정한 주문 생성 (클라이언트 금액 조작 불가)
+        const orderRes = await fetch('/api/payment/order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken: state.sessionToken, planTier: state.selectedPlan })
+        });
+        const orderData = await orderRes.json();
+
+        if (orderData.status !== 'ORDER_CREATED') {
+            notifyIsland(`⚠️ ${orderData.message || '주문 생성에 실패했습니다.'}`);
+            return;
+        }
+
+        const checkout = orderData.checkout;
+        if (!checkout.clientKey) {
+            notifyIsland('⚠️ 토스페이먼츠 클라이언트 키가 서버에 설정되지 않았습니다.');
+            return;
+        }
+
+        // 2) 결제위젯 SDK 로드 및 결제창 호출
+        const TossPayments = await loadTossPaymentsSdk();
+        const tossPayments = TossPayments(checkout.clientKey);
+        const payment = tossPayments.payment({
+            customerKey: `MG_${String(state.sessionToken || 'guest').slice(-12)}`
+        });
+
+        const resultPromise = waitForTossPaymentResult();
+
+        await payment.requestPayment({
+            method: 'CARD',
+            amount: { currency: checkout.currency, value: checkout.amountKrw },
+            orderId: checkout.orderId,
+            orderName: checkout.orderName,
+            successUrl: checkout.successUrl || `${window.location.origin}/payments/success`,
+            failUrl: checkout.failUrl || `${window.location.origin}/payments/fail`
+        });
+
+        notifyIsland('🔐 토스페이 생체인증 진행 중... 잠시만 기다려 주세요.');
+        const result = await resultPromise;
+
+        if (!result.ok) {
+            notifyIsland(`⚠️ ${result.error}`);
+            return;
+        }
+
+        // 3) 서버 최종 승인(토스 confirm API) → 리포트 해제
+        confirmTossPayBtn.disabled = true;
+        confirmTossPayBtn.textContent = '토스페이먼츠 서버 최종 승인 및 복호화 중...';
+        await finalizeUnlock({ paymentKey: result.paymentKey, orderId: result.orderId, amount: result.amount });
+    }
+
     // STEP 2 -> STEP 3: 하드 페이월 해제 및 크레딧 부여 (3단계 햅틱 & 슬롯 카운트업)
     confirmTossPayBtn.addEventListener('click', async () => {
         if (!state.sessionToken) return;
         triggerHaptic([15, 40, 25]);
         confirmTossPayBtn.disabled = true;
-        confirmTossPayBtn.textContent = '토스페이 생체인증 확인 및 AES-256-GCM 복호화 중...';
-
-        const paidAmount = state.selectedPlan === 'VIP_ANNUAL' ? state.vipAnnualPrice : state.starterPrice;
 
         try {
-            const res = await fetch('/api/payment/unlock', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    sessionToken: state.sessionToken,
-                    planTier: state.selectedPlan,
-                    paidAmount
-                })
-            });
-            const data = await res.json();
-
-            if (data.status === 'UNLOCKED') {
-                triggerHaptic([20, 50, 40, 30, 60]);
-                updateCreditDisplay(data.receipt.remainingCredits);
-                const ov = data.unlockedFullReport.overview;
-                const p = data.unlockedFullReport.prescriptions;
-
-                document.getElementById('auraBadgeEl').textContent = ov.museAuraBadge;
-                document.getElementById('auraTitleEl').textContent = ov.museAuraTitle;
-                animateSlotCountUp(document.getElementById('glowScoreEl'), ov.glowIndexScore, 1300, (v) => String(v));
-                animateSlotCountUp(document.getElementById('preventedWasteEl'), ov.preventedWasteKrw, 1600, (v) => `연 ₩${v.toLocaleString('ko-KR')}`);
-
-                document.getElementById('summaryCommentEl').textContent = ov.summaryComment;
-                document.getElementById('bioSkinAgeEl').textContent = ov.bioSkinAgeDiff;
-                document.getElementById('goldenDdayEl').textContent = ov.goldenWindowDday;
-                document.getElementById('unlockReceiptBadge').textContent = `🔓 ${data.receipt.planTier} (-10 🪙 진단차감 완료)`;
-
-                // 영수증 모달 정보 동기화
-                document.getElementById('receiptAuraText').textContent = ov.museAuraTitle;
-                document.getElementById('receiptTotalSavedText').textContent = `₩${ov.preventedWasteKrw.toLocaleString('ko-KR')}`;
-
-                const m = ov.balanceMetrics;
-                document.getElementById('metricBarrierVal').textContent = `${m.barrierGlow}점`;
-                document.getElementById('metricAuraVal').textContent = `${m.auraHarmony}점`;
-                document.getElementById('metricLymphVal').textContent = `${m.lymphDePuff}점`;
-                document.getElementById('metricMetaVal').textContent = `${m.bloodSugarMeta}점`;
-
-                setTimeout(() => {
-                    document.getElementById('metricBarrierBar').style.width = `${m.barrierGlow}%`;
-                    document.getElementById('metricAuraBar').style.width = `${m.auraHarmony}%`;
-                    document.getElementById('metricLymphBar').style.width = `${m.lymphDePuff}%`;
-                    document.getElementById('metricMetaBar').style.width = `${m.bloodSugarMeta}%`;
-                }, 60);
-
-                // 4대 처방전 바인딩
-                document.getElementById('p1Title').textContent = p.prescription1_Chugumi.title;
-                document.getElementById('p1Insight').textContent = p.prescription1_Chugumi.coreInsight;
-                document.getElementById('p1List').innerHTML = p.prescription1_Chugumi.actionItems.map((i) => `<li>${i}</li>`).join('');
-                document.getElementById('p1Warning').textContent = p.prescription1_Chugumi.worstWarning;
-
-                document.getElementById('p2Title').textContent = p.prescription2_MedicalHomeLoop.title;
-                document.getElementById('p2Clinic').innerHTML = `<strong>추천 시술:</strong> ${p.prescription2_MedicalHomeLoop.recommendedClinic}`;
-                document.getElementById('p2List').innerHTML = p.prescription2_MedicalHomeLoop.oliveYoungSynergy.map((i) => `<li>${i}</li>`).join('');
-                document.getElementById('p2Warning').textContent = p.prescription2_MedicalHomeLoop.dangerConflict;
-
-                document.getElementById('p3Title').textContent = p.prescription3_HormoneGoldenCalendar.title;
-                document.getElementById('p3Phase').innerHTML = `<strong>${p.prescription3_HormoneGoldenCalendar.currentPhase}</strong><br/>🔥 황금기: ${p.prescription3_HormoneGoldenCalendar.goldenWindow}`;
-                document.getElementById('p3List').innerHTML = p.prescription3_HormoneGoldenCalendar.stepByStepCalendar.map((i) => `<li>${i}</li>`).join('');
-
-                document.getElementById('p4Title').textContent = p.prescription4_DePuffAndBloodSugar.title;
-                document.getElementById('p4Morning').innerHTML = `<strong>💆‍♀️ 모닝 5분 붓기 삭제:</strong> ${p.prescription4_DePuffAndBloodSugar.morningRoutine}`;
-                document.getElementById('p4Meal').innerHTML = `<strong>🥗 혈당 스위치온 식단:</strong> ${p.prescription4_DePuffAndBloodSugar.switchOnMeal}`;
-                document.getElementById('p4Inner').textContent = `💡 ${p.prescription4_DePuffAndBloodSugar.secretInnerBeauty}`;
-
-                paymentModal.classList.remove('open');
-                hardPaywallSection.classList.add('hidden');
-                unlockedSection.classList.remove('hidden');
-                notifyIsland(`🎉 하드 페이월 해제 완료! 잔여 크레딧: ${data.receipt.remainingCredits} 🪙`);
-                unlockedSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (state.paymentMode === 'TOSS_LIVE') {
+                await startTossLivePayment();
+            } else {
+                // [SANDBOX_SIMULATION] 키 미설정 시 기존 데모 승인 흐름
+                confirmTossPayBtn.textContent = '테스트 결제 승인 및 AES-256-GCM 복호화 중...';
+                const paidAmount = state.selectedPlan === 'VIP_ANNUAL' ? state.vipAnnualPrice : state.starterPrice;
+                await finalizeUnlock({ planTier: state.selectedPlan, paidAmount });
             }
         } catch (err) {
             console.error(err);
+            notifyIsland('⚠️ 결제 처리 중 오류가 발생했습니다.');
         } finally {
             confirmTossPayBtn.disabled = false;
-            confirmTossPayBtn.textContent = '토스페이로 1초 만에 승인하고 전체 처방전 잠금 해제하기';
+            confirmTossPayBtn.textContent = state.paymentMode === 'TOSS_LIVE'
+                ? '토스페이먼츠로 결제하고 전체 처방전 잠금 해제하기'
+                : '토스페이로 1초 만에 승인하고 전체 처방전 잠금 해제하기';
         }
     });
 

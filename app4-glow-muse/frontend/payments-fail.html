@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>결제 실패 · MuseGlow AI</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', sans-serif;
+            background: linear-gradient(160deg, #14060b 0%, #1b1326 60%, #0b0710 100%);
+            color: #f8fafc;
+            text-align: center;
+            padding: 24px;
+        }
+        .card {
+            max-width: 360px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(244, 63, 94, 0.35);
+            border-radius: 20px;
+            padding: 28px 22px;
+            backdrop-filter: blur(12px);
+        }
+        .icon { font-size: 38px; margin-bottom: 10px; }
+        h1 { font-size: 17px; margin: 0 0 8px; font-weight: 800; }
+        p { font-size: 13px; color: rgba(248, 250, 252, 0.7); margin: 0; line-height: 1.6; }
+        .code {
+            margin-top: 14px;
+            font-size: 11.5px;
+            color: #fda4af;
+            word-break: break-all;
+        }
+        button {
+            margin-top: 18px;
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 12px;
+            background: #f43f5e;
+            color: #fff;
+            font-weight: 800;
+            font-size: 14px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">😢</div>
+        <h1>결제가 완료되지 않았습니다</h1>
+        <p id="failMessageEl">결제를 다시 시도해 주세요.</p>
+        <p class="code" id="failCodeEl"></p>
+        <button type="button" id="retryBtn">다시 시도하기</button>
+    </div>
+
+    <script>
+        /**
+         * 토스페이먼츠 결제 실패 리다이렉트 페이지
+         * - 실패 사유(code / message)를 부모 창에 전달하고 사용자가 직접 닫도록 안내합니다.
+         */
+        (function () {
+            var params = new URLSearchParams(window.location.search);
+            var code = params.get('code');
+            var message = params.get('message');
+            var orderId = params.get('orderId');
+
+            if (message) {
+                document.getElementById('failMessageEl').textContent = message;
+            }
+            if (code) {
+                document.getElementById('failCodeEl').textContent = '오류 코드: ' + code;
+            }
+
+            try {
+                if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage({
+                        type: 'TOSS_PAYMENT_FAIL',
+                        code: code,
+                        message: message,
+                        orderId: orderId
+                    }, '*');
+                }
+            } catch (err) { /* 무시 */ }
+
+            document.getElementById('retryBtn').addEventListener('click', function () {
+                if (window.opener && !window.opener.closed) {
+                    window.opener.focus();
+                    window.close();
+                } else {
+                    window.location.href = '/';
+                }
+            });
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>결제 인증 완료 · MuseGlow AI</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', sans-serif;
+            background: linear-gradient(160deg, #0b0710 0%, #1b1326 60%, #0b0710 100%);
+            color: #f8fafc;
+            text-align: center;
+            padding: 24px;
+        }
+        .card {
+            max-width: 360px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 20px;
+            padding: 28px 22px;
+            backdrop-filter: blur(12px);
+        }
+        .spinner {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            border: 3px solid rgba(255, 255, 255, 0.15);
+            border-top-color: #10b981;
+            margin: 0 auto 16px;
+            animation: spin 0.9s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        h1 { font-size: 17px; margin: 0 0 8px; font-weight: 800; }
+        p { font-size: 13px; color: rgba(248, 250, 252, 0.66); margin: 0; line-height: 1.6; }
+        .hint { margin-top: 14px; font-size: 11.5px; color: rgba(248, 250, 252, 0.42); }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="spinner"></div>
+        <h1>✅ 토스페이 인증 완료</h1>
+        <p>서버가 최종 결제 승인을 진행하고,<br />AI 시크릿 처방전을 잠금 해제하고 있습니다.</p>
+        <p class="hint">이 창은 자동으로 닫힙니다. 잠시만 기다려 주세요...</p>
+    </div>
+
+    <script>
+        /**
+         * 토스페이먼츠 결제 성공 리다이렉트 페이지
+         * - 토스가 이 페이지로 paymentKey / orderId / amount 를 쿼리스트링으로 전달합니다.
+         * - 결제창은 보통 새 창(팝업/새 탭)에서 열리므로, opener(부모 창)에 postMessage로
+         *   값을 안전하게 전달하고 즉시 닫습니다. (팝업이 아닌 경우 localStorage 폴백)
+         */
+        (function () {
+            var params = new URLSearchParams(window.location.search);
+            var payload = {
+                type: 'TOSS_PAYMENT_SUCCESS',
+                paymentKey: params.get('paymentKey'),
+                orderId: params.get('orderId'),
+                amount: params.get('amount') ? Number(params.get('amount')) : null
+            };
+
+            try {
+                if (window.opener && !window.opener.closed) {
+                    // 운영 환경에서는 반드시 실제 오리진으로 변경하세요 (와일드카드 지양)
+                    window.opener.postMessage(payload, '*');
+                } else {
+                    localStorage.setItem('museglow_toss_payment_result', JSON.stringify(payload));
+                }
+            } catch (err) {
+                try {
+                    localStorage.setItem('museglow_toss_payment_result', JSON.stringify(payload));
+                } catch (e) { /* 무시 */ }
+            }
+
+            setTimeout(function () { window.close(); }, 900);
+        })();
+    </script>
+</body>
+</html>

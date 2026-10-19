@@ -527,11 +527,41 @@ function getBusinessEvaluatorReport() {
     };
 }
 
+/**
+ * [4주 이원화 회복 곡선 생성기]
+ * 실제 AI Vision 모델이 산출한 피부 장벽 점수(0~100)를 기준으로
+ * ① SOS 루틴 적용 시 4주 회복 곡선 ② 방치 시 붕괴 곡선을 수학적으로 생성합니다.
+ * - 기존에는 프리셋 하드코딩 배열이었으나, 실제 AI 연동 시 점수가 매번 달라지므로
+ *   점수 기반 동적 생성 함수로 일반화했습니다.
+ * @param {number} barrierScore 현재 피부 장벽 점수 (0~100)
+ * @returns {{ sosAppliedScores: number[], neglectedDecayScores: number[], weeklyLabels: string[] }}
+ */
+function buildRecoveryCurves(barrierScore) {
+    const base = Math.max(20, Math.min(100, Math.round(Number(barrierScore) || 70)));
+
+    // SOS 적용: 남은 여백(100-base)을 4주에 걸쳐 체감 비율로 회복(95점 상한)
+    const headroom = Math.max(0, 95 - base);
+    const sosWeights = [0, 0.34, 0.62, 0.83, 1];
+    const sosAppliedScores = sosWeights.map((w) => Math.min(95, Math.round(base + headroom * w)));
+
+    // 방치: 점수가 낮을수록 붕괴 속도가 빨라짐(최대 -22점, 40점 하한)
+    const decayRate = 0.10 + ((100 - base) / 100) * 0.12;
+    const decayStep = Math.round(base * decayRate);
+    const neglectedDecayScores = [0, 1, 2, 3, 4].map((week) =>
+        Math.max(40, Math.round(base - decayStep * week * (week === 4 ? 1.15 : 1)))
+    );
+
+    const weeklyLabels = ['Week 0 (오늘)', 'Week 1 · 진정기', 'Week 2 · 재건기', 'Week 3 · 밀도 강화기', 'Week 4 · 완성형 실크 장벽'];
+
+    return { sosAppliedScores, neglectedDecayScores, weeklyLabels };
+}
+
 module.exports = {
     analyzeGlowMuseProfile,
     analyzeSkinBarrierScan,
     simulateChugumiPhotoStudio,
     generateDailyVariableReward,
     evaluatePouchItemCompatibility,
-    getBusinessEvaluatorReport
+    getBusinessEvaluatorReport,
+    buildRecoveryCurves
 };

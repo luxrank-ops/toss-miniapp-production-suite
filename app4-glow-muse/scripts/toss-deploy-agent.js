@@ -13,10 +13,10 @@ const crypto = require('crypto');
 const { runQaAudit } = require('./qa-auditor');
 const { getDynamicConfig } = require('../backend/config/envLoader');
 
-function runAutomatedDeployment() {
+async function runAutomatedDeployment() {
     console.log('🚀 [AGENT 7: Toss Deployment Sub-Agent] v5.0 (4대 전문 에이전트 합동 완전체) 빌드 및 업로드 가동...');
 
-    const qaReport = runQaAudit();
+    const qaReport = await runQaAudit();
     if (qaReport.status !== 'PASS') {
         console.error('❌ QA 감사 미통과로 인해 배포를 중단합니다:', qaReport);
         process.exit(1);
@@ -35,14 +35,23 @@ function runAutomatedDeployment() {
         'supabase/migrations/003_upgrade_business_evaluator_override.sql',
         'supabase/migrations/004_create_skin_scanner_tables.sql',
         'supabase/migrations/005_upgrade_v5_multi_agent_collaboration.sql',
+        'supabase/migrations/006_create_runtime_persistence_tables.sql',
         'src/types.ts',
         'src/components/BarrierRecoveryDashboard.tsx',
         'src/components/SkinScannerView.tsx',
         'backend/config/envLoader.js',
         'backend/security/cryptoManager.js',
         'backend/services/glowEngine.js',
+        // [실전 연동] 실제 AI 게이트웨이 & 토스페이먼츠 결제 게이트웨이
+        'backend/services/aiProvider.js',
+        'backend/services/aiEnrichment.js',
+        'backend/services/paymentGateway.js',
+        'backend/services/supabaseClient.js',
+        'backend/services/persistenceStore.js',
         'backend/server.js',
         'frontend/index.html',
+        'frontend/payments-success.html',
+        'frontend/payments-fail.html',
         'frontend/styles/tds-glow.css',
         'frontend/js/app.js'
     ];
@@ -106,7 +115,10 @@ function runAutomatedDeployment() {
 }
 
 if (require.main === module) {
-    runAutomatedDeployment();
+    runAutomatedDeployment().catch((err) => {
+        console.error('배포 에이전트 실행 실패:', err);
+        process.exit(1);
+    });
 }
 
 module.exports = {

@@ -99,6 +99,9 @@ function getDynamicConfig() {
         appOwnerIdMasked: maskSensitiveString(appOwnerId),
         settlementHolderMasked: maskSensitiveString(settlementHolder),
         vipAnnualPrice,
+        ai: getAiConfig(),
+        payments: getPaymentConfig(),
+        persistence: getSupabaseConfig(),
         formattedVipAnnualPrice: `₩${vipAnnualPrice.toLocaleString('ko-KR')}`,
         monthlyEquivalentFormatted: `월 ₩${Math.round(vipAnnualPrice / 12).toLocaleString('ko-KR')}`,
         trialDays,
@@ -112,8 +115,150 @@ function getDynamicConfig() {
     };
 }
 
+/**
+ * [AI 연동 설정] 실제 LLM/Vision 제공자 구성 정보를 동적으로 읽어옵니다.
+ * - .env에 API 키가 하나도 없으면 enabled=false가 되며, 서버는 기존 로컬
+ *   결정론적 엔진(glowEngine.js)으로 자동 폴백합니다. (서비스 중단 방지)
+ * - *_BASE_URL 오버라이드를 지원하므로 사내 프록시·로컬 목 서버 테스트가 가능합니다.
+ */
+function getAiConfig() {
+    loadDotEnv();
+
+    const requested = (process.env.AI_PROVIDER || 'auto').toLowerCase().trim();
+
+    const candidates = {
+        gemini: {
+            apiKey: (process.env.GEMINI_API_KEY || '').trim(),
+            model: (process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim(),
+            baseUrl: (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta').trim()
+        },
+        openai: {
+            apiKey: (process.env.OPENAI_API_KEY || '').trim(),
+            model: (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim(),
+            baseUrl: (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').trim()
+        },
+        anthropic: {
+            apiKey: (process.env.ANTHROPIC_API_KEY || '').trim(),
+            model: (process.env.ANTHROPIC_MODEL || 'claude-3-7-sonnet-latest').trim(),
+            baseUrl: (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com/v1').trim()
+        }
+    };
+
+    const priority = ['gemini', 'openai', 'anthropic'];
+    let resolvedProvider = null;
+
+    if (requested === 'none' || requested === 'off' || requested === 'mock') {
+        resolvedProvider = null;
+    } else if (candidates[requested]) {
+        resolvedProvider = requested;
+    } else {
+        // auto: 키가 주입된 첫 번째 제공자를 자동 선택
+        resolvedProvider = priority.find((name) => Boolean(candidates[name].apiKey)) || null;
+    }
+
+    const selected = resolvedProvider ? candidates[resolvedProvider] : null;
+    const enabled = Boolean(selected && selected.apiKey);
+
+    const parsedTimeout = parseInt(process.env.AI_TIMEOUT_MS || '20000', 10);
+    const parsedMaxTokens = parseInt(process.env.AI_MAX_TOKENS || '2048', 10);
+    const parsedTemperature = parseFloat(process.env.AI_TEMPERATURE || '0.7');
+
+    return {
+        provider: resolvedProvider,
+        enabled,
+        mode: enabled ? 'LIVE_AI' : 'LOCAL_DETERMINISTIC_FALLBACK',
+        apiKey: selected ? selected.apiKey : '',
+        model: selected ? selected.model : null,
+        baseUrl: selected ? selected.baseUrl : null,
+        timeoutMs: (!Number.isNaN(parsedTimeout) && parsedTimeout >= 1000) ? parsedTimeout : 20000,
+        maxTokens: (!Number.isNaN(parsedMaxTokens) && parsedMaxTokens > 0) ? parsedMaxTokens : 2048,
+        temperature: (!Number.isNaN(parsedTemperature) && parsedTemperature >= 0 && parsedTemperature <= 2)
+            ? parsedTemperature
+            : 0.7,
+        reason: enabled
+            ? null
+            : 'AI_PROVIDER 키가 설정되지 않아 로컬 결정론적 엔진(glowEngine.js)으로 동작합니다. .env에 GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY 중 하나를 주입하세요.'
+    };
+}
+
+/**
+ * [토스페이먼츠 결제 설정]
+ * - 클라이언트 키 + 시크릿 키가 모두 주입되면 실결제(TOSS_LIVE) 모드로 동작합니다.
+ * - 하나라도 없으면 기존 샌드박스 시뮬레이션(SANDBOX_SIMULATION) 모드로 폴백합니다.
+ * - 시크릿 키는 절대 클라이언트로 내려보내지 않습니다(마스킹만 노출).
+ */
+function getPaymentConfig() {
+    loadDotEnv();
+
+    const clientKey = (process.env.TOSS_PAYMENTS_CLIENT_KEY || '').trim();
+    const secretKey = (process.env.TOSS_PAYMENTS_SECRET_KEY || '').trim();
+    const baseUrl = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '');
+
+    const live = Boolean(clientKey && secretKey);
+
+    return {
+        mode: live ? 'TOSS_LIVE' : 'SANDBOX_SIMULATION',
+        enabled: live,
+        clientKey,
+        clientKeyMasked: clientKey ? maskSensitiveString(clientKey) : null,
+        secretKey,
+        secretKeyMasked: secretKey ? maskSensitiveString(secretKey) : null,
+        apiBaseUrl: (process.env.TOSS_PAYMENTS_API_BASE_URL || 'https://api.tosspayments.com/v1').trim().replace(/\/+$/, ''),
+        publicBaseUrl: baseUrl,
+        successUrl: `${baseUrl}/payments/success`,
+        failUrl: `${baseUrl}/payments/fail`
+    };
+}
+
+/**
+ * [Supabase 영속화 설정]
+ * - URL + Service Role Key 가 모두 주입되면 DB 영속화(SUPABASE) 모드로 동작합니다.
+ * - 미주입 또는 SUPABASE_PERSISTENCE=off 이면 인메모리(IN_MEMORY_FALLBACK) 모드로 동작합니다.
+ * - 런타임에 DB 장애가 감지되면 자동으로 인메모리로 폴백합니다(무중단 설계).
+ * - ※ Service Role Key 는 RLS 를 우회하는 서버 전용 키이므로 클라이언트에 절대 노출 금지
+ */
+function getSupabaseConfig() {
+    loadDotEnv();
+
+    const url = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+    const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+    const switchValue = (process.env.SUPABASE_PERSISTENCE || 'auto').trim().toLowerCase();
+
+    const parsedTimeout = parseInt(process.env.SUPABASE_TIMEOUT_MS || '5000', 10);
+
+    const forcedOff = switchValue === 'off' || switchValue === 'false' || switchValue === 'none';
+    const configured = Boolean(url && serviceKey) && !forcedOff;
+
+    return {
+        url,
+        restUrl: url ? `${url}/rest/v1` : null,
+        serviceKey,
+        serviceKeyMasked: serviceKey ? maskSensitiveString(serviceKey) : null,
+        enabled: configured,
+        forcedOff,
+        mode: configured ? 'SUPABASE' : 'IN_MEMORY_FALLBACK',
+        timeoutMs: (!Number.isNaN(parsedTimeout) && parsedTimeout >= 500) ? parsedTimeout : 5000,
+        tables: {
+            sessions: 'glow_muse_runtime_sessions',
+            orders: 'glow_muse_runtime_orders',
+            payments: 'glow_muse_runtime_payments',
+            skinScans: 'glow_muse_runtime_skin_scans',
+            studioLogs: 'glow_muse_runtime_studio_logs',
+            aiLogs: 'glow_muse_ai_inference_logs'
+        },
+        reason: configured
+            ? null
+            : (forcedOff
+                ? 'SUPABASE_PERSISTENCE=off 로 설정되어 인메모리 모드로 동작합니다.'
+                : 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 미설정 — 인메모리 모드로 동작합니다(데이터는 재시작 시 소실).')
+    };
+}
+
 module.exports = {
     loadDotEnv,
     maskSensitiveString,
-    getDynamicConfig
+    getDynamicConfig,
+    getAiConfig,
+    getPaymentConfig,
+    getSupabaseConfig
 };
