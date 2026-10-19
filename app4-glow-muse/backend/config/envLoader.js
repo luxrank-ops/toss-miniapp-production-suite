@@ -102,6 +102,10 @@ function getDynamicConfig() {
         ai: getAiConfig(),
         payments: getPaymentConfig(),
         persistence: getSupabaseConfig(),
+        webhook: getWebhookConfig(),
+        billing: getBillingConfig(),
+        iap: getIapConfig(),
+        aiCache: getAiCacheConfig(),
         formattedVipAnnualPrice: `₩${vipAnnualPrice.toLocaleString('ko-KR')}`,
         monthlyEquivalentFormatted: `월 ₩${Math.round(vipAnnualPrice / 12).toLocaleString('ko-KR')}`,
         trialDays,
@@ -244,7 +248,11 @@ function getSupabaseConfig() {
             payments: 'glow_muse_runtime_payments',
             skinScans: 'glow_muse_runtime_skin_scans',
             studioLogs: 'glow_muse_runtime_studio_logs',
-            aiLogs: 'glow_muse_ai_inference_logs'
+            aiLogs: 'glow_muse_ai_inference_logs',
+            webhookLogs: 'glow_muse_payment_webhook_logs',
+            billingSubscriptions: 'glow_muse_billing_subscriptions',
+            iapOrders: 'glow_muse_iap_orders',
+            aiCache: 'glow_muse_ai_response_cache'
         },
         reason: configured
             ? null
@@ -254,11 +262,208 @@ function getSupabaseConfig() {
     };
 }
 
+/**
+ * [공통] 환경변수 boolean 파서 (auto/true/false 허용)
+ * @param {string} raw 원본 값
+ * @param {boolean} fallback 값이 비어있거나 해석 불가할 때 기본값
+ * @returns {boolean}
+ */
+function parseBoolean(raw, fallback) {
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+        return fallback;
+    }
+    const value = String(raw).trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on'].includes(value)) {
+        return true;
+    }
+    if (['0', 'false', 'no', 'n', 'off'].includes(value)) {
+        return false;
+    }
+    return fallback;
+}
+
+/**
+ * [공통] 정수 범위 파서 (범위를 벗어나면 기본값)
+ */
+function parseIntInRange(raw, fallback, min, max) {
+    const parsed = parseInt(raw, 10);
+    if (Number.isNaN(parsed) || parsed < min || parsed > max) {
+        return fallback;
+    }
+    return parsed;
+}
+
+/**
+ * ============================================================================
+ * [토스페이먼츠 웹훅 설정]
+ * ----------------------------------------------------------------------------
+ * - PAYMENT_STATUS_CHANGED / DEPOSIT_CALLBACK / BILLING_DELETED 이벤트를
+ *   /api/webhooks/toss 로 수신합니다.
+ * - 결제 웹훅에는 서명 헤더가 없으므로(토스 공식 문서), 본문을 신뢰하지 않고
+ *   **서버가 토스 API로 결제 상태를 재조회(canonical verification)** 하여 검증합니다.
+ * - TOSS_WEBHOOK_PATH_TOKEN 을 설정하면 등록 URL 에 ?token=... 을 요구하여
+ *   무작위 스캐너 트래픽을 1차 차단합니다. (토스 콘솔 웹훅 URL 에 동일하게 등록)
+ * ============================================================================
+ */
+function getWebhookConfig() {
+    loadDotEnv();
+
+    const pathToken = (process.env.TOSS_WEBHOOK_PATH_TOKEN || '').trim();
+    const parsedTimeout = parseInt(process.env.TOSS_WEBHOOK_TIMEOUT_MS || '8000', 10);
+
+    return {
+        enabled: true,
+        pathToken,
+        pathTokenConfigured: Boolean(pathToken),
+        verifyCanonical: parseBoolean(process.env.TOSS_WEBHOOK_VERIFY_CANONICAL, true),
+        timeoutMs: parseIntInRange(parsedTimeout, 8000, 1000, 30000),
+        maxBodyBytes: 256 * 1024,
+        eventTypes: ['PAYMENT_STATUS_CHANGED', 'DEPOSIT_CALLBACK', 'BILLING_DELETED', 'CANCEL_STATUS_CHANGED']
+    };
+}
+
+/**
+ * ============================================================================
+ * [토스페이먼츠 자동결제(빌링) 설정]
+ * ----------------------------------------------------------------------------
+ * - 빌링키 발급: POST /v1/billing/authorizations/issue
+ * - 자동결제 승인: POST /v1/billing/{billingKey}
+ * - 빌링키 삭제: DELETE /v1/billing/{billingKey}
+ * - 자동결제는 토스페이먼츠와 **별도 계약(자동결제 계약)** 이 필요합니다.
+ *   미계약 상태에서 테스트 키로 호출하면 NOT_SUPPORTED_METHOD 가 반환됩니다.
+ * - 갱신 스케줄러는 기본 auto(실결제 모드에서만 가동)이며, 테스트에서는 끌 수 있습니다.
+ * ============================================================================
+ */
+function getBillingConfig() {
+    loadDotEnv();
+
+    const payments = getPaymentConfig();
+    const switchValue = (process.env.TOSS_BILLING_ENABLED || 'auto').trim().toLowerCase();
+    const forcedOff = ['off', 'false', 'none', 'disabled'].includes(switchValue);
+    const enabled = !forcedOff && payments.mode === 'TOSS_LIVE';
+
+    const schedulerSwitch = (process.env.BILLING_SCHEDULER_ENABLED || 'auto').trim().toLowerCase();
+    const schedulerEnabled = enabled && !['off', 'false', 'none', 'disabled'].includes(schedulerSwitch);
+
+    const parsedInterval = parseInt(process.env.BILLING_SCHEDULER_INTERVAL_MS || '3600000', 10);
+    const parsedRetryMax = parseInt(process.env.BILLING_RETRY_MAX || '3', 10);
+    const parsedRetryDelay = parseInt(process.env.BILLING_RETRY_DELAY_HOURS || '24', 10);
+    const parsedPeriod = parseInt(process.env.BILLING_RENEWAL_PERIOD_DAYS || '365', 10);
+
+    return {
+        enabled,
+        mode: enabled ? 'TOSS_LIVE' : (payments.mode === 'TOSS_LIVE' ? 'DISABLED_BY_ENV' : 'SANDBOX_SIMULATION'),
+        schedulerEnabled,
+        schedulerIntervalMs: parseIntInRange(parsedInterval, 3600000, 60000, 86400000),
+        retryMax: parseIntInRange(parsedRetryMax, 3, 1, 10),
+        retryDelayHours: parseIntInRange(parsedRetryDelay, 24, 1, 168),
+        renewalPeriodDays: parseIntInRange(parsedPeriod, 365, 1, 730),
+        adminToken: (process.env.TOSS_BILLING_ADMIN_TOKEN || '').trim(),
+        adminTokenConfigured: Boolean((process.env.TOSS_BILLING_ADMIN_TOKEN || '').trim()),
+        chargeTimeoutMs: 65000
+    };
+}
+
+/**
+ * ============================================================================
+ * [App-in-Toss 인앱 결제(IAP) 설정]
+ * ----------------------------------------------------------------------------
+ * - 클라이언트: @apps-in-toss/web-framework 의 IAP.createOneTimePurchaseOrder /
+ *   createSubscriptionPurchaseOrder / getProductItemList / getPendingOrders
+ * - 서버 검증: POST https://apps-in-toss-api.toss.im/api-partner/v1/apps-in-toss/
+ *   order/get-order-status (mTLS + Authorization: Bearer {API Key})
+ * - 상품 SKU 는 앱인토스 콘솔에 등록한 값과 1:1로 매핑합니다(VIP 연간/스타터 팩/구독).
+ * - AIT_API_KEY 가 없으면 SANDBOX_SIMULATION 으로 동작합니다(개발/데모 전용).
+ * ============================================================================
+ */
+function getIapConfig() {
+    loadDotEnv();
+
+    const apiKey = (process.env.AIT_API_KEY || process.env.TOSS_IAP_API_KEY || '').trim();
+    const baseUrl = (process.env.AIT_API_BASE_URL || 'https://apps-in-toss-api.toss.im').trim().replace(/\/+$/, '');
+    const certPath = (process.env.AIT_MTLS_CERT_PATH || process.env.TOSS_MTLS_CERT_PATH || '').trim();
+    const keyPath = (process.env.AIT_MTLS_KEY_PATH || process.env.TOSS_MTLS_KEY_PATH || '').trim();
+
+    const skus = {
+        vipAnnual: (process.env.AIT_IAP_SKU_VIP_ANNUAL || '').trim(),
+        starterPack: (process.env.AIT_IAP_SKU_STARTER_PACK || '').trim(),
+        vipSubscription: (process.env.AIT_IAP_SKU_VIP_SUBSCRIPTION || '').trim()
+    };
+
+    const configuredSkus = Object.values(skus).filter(Boolean);
+    const live = Boolean(apiKey);
+
+    const parsedTimeout = parseInt(process.env.AIT_IAP_TIMEOUT_MS || '15000', 10);
+
+    return {
+        mode: live ? 'LIVE' : 'SANDBOX_SIMULATION',
+        enabled: live || configuredSkus.length > 0,
+        apiKey,
+        apiKeyMasked: apiKey ? maskSensitiveString(apiKey) : null,
+        appId: (process.env.AIT_APP_ID || '').trim() || null,
+        baseUrl,
+        mtls: {
+            certPath,
+            keyPath,
+            caPath: (process.env.AIT_MTLS_CA_PATH || '').trim(),
+            passphrase: (process.env.AIT_MTLS_KEY_PASSPHRASE || '').trim(),
+            configured: Boolean(certPath && keyPath)
+        },
+        skus,
+        configuredSkus,
+        allowUnboundGrant: parseBoolean(process.env.AIT_IAP_ALLOW_UNBOUND_GRANT, false),
+        sandboxGrantAllowed: parseBoolean(process.env.AIT_IAP_SANDBOX_GRANT, false),
+        adminToken: (process.env.AIT_IAP_ADMIN_TOKEN || process.env.TOSS_BILLING_ADMIN_TOKEN || '').trim(),
+        sessionSecret: (process.env.AIT_SESSION_SECRET || '').trim(),
+        timeoutMs: parseIntInRange(parsedTimeout, 15000, 2000, 60000)
+    };
+}
+
+/**
+ * ============================================================================
+ * [AI 응답 캐싱 설정]
+ * ----------------------------------------------------------------------------
+ * - 동일 입력(프롬프트 + 이미지 해시 + 모델) 재요청 시 LLM 호출을 생략합니다.
+ * - 캐시 키에는 provider/model/temperature/maxTokens/프롬프트 버전을 포함해
+ *   모델·프롬프트가 바뀌면 자동으로 미스가 나도록 합니다.
+ * - 응답 본문은 개인화 정보를 포함할 수 있으므로 AES-256-GCM 으로 암호화 저장합니다.
+ * - DB 미설정 시 인메모리 LRU 캐시로만 동작합니다(서비스 중단 없음).
+ * ============================================================================
+ */
+function getAiCacheConfig() {
+    loadDotEnv();
+
+    const parsedTtl = parseInt(process.env.AI_CACHE_TTL_MS || '86400000', 10);
+    const parsedSkinTtl = parseInt(process.env.AI_CACHE_SKIN_SCAN_TTL_MS || '21600000', 10);
+    const parsedReportTtl = parseInt(process.env.AI_CACHE_REPORT_TTL_MS || '86400000', 10);
+    const parsedMaxEntries = parseInt(process.env.AI_CACHE_MAX_ENTRIES || '500', 10);
+    const parsedMaxPayload = parseInt(process.env.AI_CACHE_MAX_PAYLOAD_BYTES || '65536', 10);
+    const parsedUnitCost = parseFloat(process.env.AI_CACHE_UNIT_COST_USD || '0.0035');
+
+    return {
+        enabled: parseBoolean(process.env.AI_CACHE_ENABLED, true),
+        namespace: (process.env.AI_CACHE_VERSION || 'v1').trim(),
+        ttlMs: parseIntInRange(parsedTtl, 86400000, 60000, 604800000),
+        ttlByKind: {
+            SKIN_SCAN: parseIntInRange(parsedSkinTtl, 21600000, 60000, 604800000),
+            PREMIUM_REPORT: parseIntInRange(parsedReportTtl, 86400000, 60000, 604800000)
+        },
+        maxEntries: parseIntInRange(parsedMaxEntries, 500, 10, 5000),
+        maxPayloadBytes: parseIntInRange(parsedMaxPayload, 65536, 1024, 1024 * 1024),
+        unitCostUsd: (!Number.isNaN(parsedUnitCost) && parsedUnitCost >= 0) ? parsedUnitCost : 0.0035,
+        persist: parseBoolean(process.env.AI_CACHE_PERSIST, true)
+    };
+}
+
 module.exports = {
     loadDotEnv,
     maskSensitiveString,
     getDynamicConfig,
     getAiConfig,
     getPaymentConfig,
-    getSupabaseConfig
+    getSupabaseConfig,
+    getWebhookConfig,
+    getBillingConfig,
+    getIapConfig,
+    getAiCacheConfig
 };

@@ -41,6 +41,13 @@
         // [실제 결제 연동] 'TOSS_LIVE' | 'SANDBOX_SIMULATION'
         paymentMode: 'SANDBOX_SIMULATION',
         paymentsClientKey: null,
+        // [결제수단] CARD(즉시승인) | VIRTUAL_ACCOUNT(가상계좌 · 웹훅 입금확인)
+        paymentMethod: 'CARD',
+        // [앱인토스 IAP] SDK 브리지 사용 가능 여부 (/js/iap.js 가 갱신)
+        iapAvailable: false,
+        iapCatalog: [],
+        pendingVirtualOrderId: null,
+        virtualAccountPollTimer: null,
         // [실제 AI 연동] /api/config 의 ai 블록으로 동기화
         ai: {
             enabled: false,
@@ -126,6 +133,17 @@
     const sheetPriceText = document.getElementById('sheetPriceText');
     const confirmTossPayBtn = document.getElementById('confirmTossPayBtn');
     const paymentModeBadge = document.getElementById('paymentModeBadge');
+    // [가상계좌] 결제수단 선택 · 계좌 발급 정보 · 앱인토스 IAP 배지/복원 버튼
+    const paymentMethodBtns = document.querySelectorAll('.payment-method-btn');
+    const paymentMethodHint = document.getElementById('paymentMethodHint');
+    const virtualAccountBox = document.getElementById('virtualAccountBox');
+    const vaBankText = document.getElementById('vaBankText');
+    const vaNumberText = document.getElementById('vaNumberText');
+    const vaDueDateText = document.getElementById('vaDueDateText');
+    const iapModeBadge = document.getElementById('iapModeBadge');
+    const restoreIapBtn = document.getElementById('restoreIapBtn');
+    const registerBillingBtn = document.getElementById('registerBillingBtn');
+    const billingStatusText = document.getElementById('billingStatusText');
 
     // AI 엔진 상태 배지 (실제 LLM/Vision 연동 여부 표시)
     const aiEngineText = document.getElementById('aiEngineText');
@@ -858,6 +876,11 @@
                 }
                 syncPaymentModeBadge();
 
+                if (registerBillingBtn && data.billing) {
+                    const canRegister = Boolean(data.billing.enabled) && state.paymentMode === 'TOSS_LIVE';
+                    registerBillingBtn.classList.toggle('hidden', !canRegister);
+                }
+
                 syncPlanSelectionUI();
             }
         } catch (err) {
@@ -1045,7 +1068,57 @@
 
     closePayModalBtn.addEventListener('click', () => {
         paymentModal.classList.remove('open');
+        // 모달을 닫아도 입금 폴링은 백그라운드에서 계속됩니다(입금 확인 시 자동 해제).
     });
+
+    // [결제수단 선택] 카드 ↔ 가상계좌
+    paymentMethodBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            state.paymentMethod = btn.getAttribute('data-method') || 'CARD';
+            triggerHaptic(8);
+            syncPaymentMethodUI();
+        });
+    });
+
+    // [앱인토스 IAP] 이전 미결 주문 복원
+    if (restoreIapBtn) {
+        restoreIapBtn.addEventListener('click', async () => {
+            if (!state.sessionToken || !window.MuseGlowIAP) return;
+            restoreIapBtn.disabled = true;
+            restoreIapBtn.textContent = '📱 구매 복원 중...';
+            try {
+                const result = await window.MuseGlowIAP.restore(state.sessionToken);
+                if (result.ok && result.processed > 0) {
+                    const res = await fetch(`/api/session/report?sessionToken=${encodeURIComponent(state.sessionToken)}`);
+                    const data = await res.json();
+                    if (res.ok && data.status === 'UNLOCKED') {
+                        renderUnlockedFromReport(data);
+                        return;
+                    }
+                }
+                notifyIsland(result.ok ? '복원할 미결 구매가 없습니다.' : '구매 복원에 실패했습니다.');
+            } finally {
+                restoreIapBtn.disabled = false;
+                restoreIapBtn.textContent = '📱 이전 인앱결제 구매 복원하기';
+            }
+        });
+    }
+
+    /** 앱인토스 브리지 감지 → IAP 배지/버튼 노출 */
+    async function syncIapAvailability() {
+        if (!window.MuseGlowIAP) return;
+        const available = await window.MuseGlowIAP.detect();
+        state.iapAvailable = Boolean(available);
+
+        if (available) {
+            state.iapCatalog = await window.MuseGlowIAP.getProducts();
+            if (iapModeBadge) iapModeBadge.classList.remove('hidden');
+            if (restoreIapBtn) restoreIapBtn.classList.remove('hidden');
+        } else {
+            if (iapModeBadge) iapModeBadge.classList.add('hidden');
+            if (restoreIapBtn) restoreIapBtn.classList.add('hidden');
+        }
+    }
 
     // =========================================================================
     // [실제 토스페이먼츠 결제 연동]
@@ -1055,6 +1128,108 @@
     //         → 서버 최종 승인(/api/payment/unlock → 토스 /v1/payments/confirm)
     //   ※ 클라이언트는 금액을 단 한 번도 결정하지 않습니다(변조 원천 차단).
     // =========================================================================
+    // =========================================================================
+    // [가상계좌 · 앱인토스 IAP] 결제수단 상태 동기화 및 입금 폴링
+    //   - 가상계좌는 발급 시점에는 잠금이 해제되지 않고, 입금 완료 웹훅이
+    //     서버에서 수신된 뒤 /api/session/report 폴링으로 잠금이 해제됩니다.
+    // =========================================================================
+    function syncPaymentMethodUI() {
+        if (!paymentMethodBtns.length) return;
+
+        const isVirtual = state.paymentMethod === 'VIRTUAL_ACCOUNT';
+        paymentMethodBtns.forEach((btn) => {
+            const active = btn.getAttribute('data-method') === state.paymentMethod;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+
+        if (paymentMethodHint) {
+            paymentMethodHint.textContent = isVirtual
+                ? '가상계좌는 계좌 발급 후 입금이 확인되는 순간 웹훅으로 자동 잠금 해제됩니다. 입금 전에는 처방전이 열리지 않습니다.'
+                : '카드는 서버 최종 승인 즉시 잠금이 해제됩니다.';
+        }
+
+        confirmTossPayBtn.textContent = isVirtual
+            ? '가상계좌 발급하고 입금 확인 시 자동 잠금 해제하기'
+            : (state.paymentMode === 'TOSS_LIVE'
+                ? '토스페이로 1분 만에 승인하고 전체 처방전 잠금 해제하기'
+                : '토스페이로 1초 만에 승인하고 전체 처방전 잠금 해제하기');
+    }
+
+    function showVirtualAccount(virtualAccount, orderId) {
+        if (!virtualAccount || !virtualAccountBox) return;
+
+        state.pendingVirtualOrderId = orderId || null;
+        vaBankText.textContent = virtualAccount.bank || virtualAccount.bankCode || '-';
+        vaNumberText.textContent = virtualAccount.accountNumber || '-';
+        vaDueDateText.textContent = virtualAccount.dueDate || '-';
+        virtualAccountBox.classList.remove('hidden');
+        confirmTossPayBtn.textContent = '🏦 입금 확인 중... (입금되면 자동으로 잠금 해제)';
+        startVirtualAccountPolling();
+    }
+
+    /** 입금 완료 웹훅 반영 여부를 주기적으로 확인 (최대 30분, 5초 간격) */
+    function startVirtualAccountPolling(maxWaitMs = 30 * 60 * 1000) {
+        if (state.virtualAccountPollTimer) {
+            clearInterval(state.virtualAccountPollTimer);
+        }
+        const startedAt = Date.now();
+
+        state.virtualAccountPollTimer = setInterval(async () => {
+            if (!state.sessionToken) return;
+            if (Date.now() - startedAt > maxWaitMs) {
+                clearInterval(state.virtualAccountPollTimer);
+                state.virtualAccountPollTimer = null;
+                notifyIsland('⏰ 입금 확인 대기 시간이 지났습니다. 입금 후 새로고침하면 자동 해제됩니다.');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/session/report?sessionToken=${encodeURIComponent(state.sessionToken)}`);
+                const data = await res.json();
+                if (res.ok && data.status === 'UNLOCKED') {
+                    clearInterval(state.virtualAccountPollTimer);
+                    state.virtualAccountPollTimer = null;
+                    virtualAccountBox.classList.add('hidden');
+                    triggerHaptic([20, 50, 40, 30, 60]);
+                    // 서버가 이미 크레딧을 지급했으므로 추가 차감 없이 화면만 갱신
+                    renderUnlockedFromReport(data);
+                }
+            } catch (err) {
+                // 네트워크 일시 오류는 다음 폴링에서 재시도
+            }
+        }, 5000);
+    }
+
+    /** /api/session/report 응답을 기존 해제 리포트 렌더러와 호환되는 형태로 변환 */
+    function renderUnlockedFromReport(data) {
+        // 입금/자동갱신/IAP 로 잠금이 해제되었으므로 대기 상태를 정리합니다.
+        state.pendingVirtualOrderId = null;
+        if (state.virtualAccountPollTimer) {
+            clearInterval(state.virtualAccountPollTimer);
+            state.virtualAccountPollTimer = null;
+        }
+        if (virtualAccountBox) {
+            virtualAccountBox.classList.add('hidden');
+        }
+
+        const report = data.unlockedFullReport || {};
+        const aiInfo = data.ai || {};
+        applyUnlockedReport({
+            status: 'UNLOCKED',
+            planTier: data.planTier,
+            receipt: {
+                planTier: data.planTier,
+                remainingCredits: data.remainingCredits,
+                creditsDeductedForDiagnosis: 0,
+                alreadyGranted: true,
+                paymentMethod: 'VIRTUAL_ACCOUNT'
+            },
+            unlockedFullReport: report,
+            ai: aiInfo
+        });
+    }
+
     let tossPaymentsSdkPromise = null;
 
     function loadTossPaymentsSdk() {
@@ -1094,6 +1269,8 @@
                 if (!data || typeof data !== 'object') return;
                 if (data.type === 'TOSS_PAYMENT_SUCCESS') {
                     finish({ ok: true, paymentKey: data.paymentKey, orderId: data.orderId, amount: data.amount });
+                } else if (data.type === 'TOSS_BILLING_AUTH_SUCCESS') {
+                    finish({ ok: true, billingAuth: true, authKey: data.authKey, customerKey: data.customerKey });
                 } else if (data.type === 'TOSS_PAYMENT_FAIL') {
                     finish({ ok: false, error: data.message || '결제가 취소되었습니다.', code: data.code });
                 }
@@ -1108,7 +1285,9 @@
                 if (cached) {
                     const parsed = JSON.parse(cached);
                     localStorage.removeItem('museglow_toss_payment_result');
-                    if (parsed && parsed.paymentKey) {
+                    if (parsed && parsed.type === 'TOSS_BILLING_AUTH_SUCCESS' && parsed.authKey) {
+                        finish({ ok: true, billingAuth: true, authKey: parsed.authKey, customerKey: parsed.customerKey });
+                    } else if (parsed && parsed.paymentKey) {
                         finish({ ok: true, paymentKey: parsed.paymentKey, orderId: parsed.orderId, amount: parsed.amount });
                     }
                 }
@@ -1125,9 +1304,24 @@
         });
         const data = await res.json();
 
+        // [가상계좌] 계좌는 발급되었지만 아직 입금 전 → 잠금 유지 + 계좌 안내 + 폴링 시작
+        if (data.status === 'AWAITING_DEPOSIT') {
+            showVirtualAccount(data.virtualAccount, data.orderId);
+            confirmTossPayBtn.disabled = false;
+            notifyIsland('🏦 가상계좌가 발급되었습니다. 입금이 확인되면 자동으로 잠금이 해제됩니다.');
+            return false;
+        }
+
         if (data.status !== 'UNLOCKED') {
             notifyIsland(`⚠️ ${data.message || '결제 승인에 실패했습니다.'}`);
             return false;
+        }
+
+        virtualAccountBox.classList.add('hidden');
+        state.pendingVirtualOrderId = null;
+        if (state.virtualAccountPollTimer) {
+            clearInterval(state.virtualAccountPollTimer);
+            state.virtualAccountPollTimer = null;
         }
 
         applyUnlockedReport(data);
@@ -1207,10 +1401,19 @@
         notifyIsland('💳 토스페이먼츠 결제 주문을 생성하고 있습니다...');
 
         // 1) 서버가 금액을 확정한 주문 생성 (클라이언트 금액 조작 불가)
+        const isVirtual = state.paymentMethod === 'VIRTUAL_ACCOUNT';
+        const customerName = (document.getElementById('nicknameInput')
+            && document.getElementById('nicknameInput').value || '').trim().slice(0, 30);
+
         const orderRes = await fetch('/api/payment/order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionToken: state.sessionToken, planTier: state.selectedPlan })
+            body: JSON.stringify({
+                sessionToken: state.sessionToken,
+                planTier: state.selectedPlan,
+                paymentMethod: state.paymentMethod,
+                customerName: customerName || undefined
+            })
         });
         const orderData = await orderRes.json();
 
@@ -1234,14 +1437,24 @@
 
         const resultPromise = waitForTossPaymentResult();
 
-        await payment.requestPayment({
-            method: 'CARD',
+        const requestPayload = {
+            method: isVirtual ? 'VIRTUAL_ACCOUNT' : 'CARD',
             amount: { currency: checkout.currency, value: checkout.amountKrw },
             orderId: checkout.orderId,
             orderName: checkout.orderName,
+            customerName: checkout.virtualAccount && checkout.virtualAccount.customerName
+                ? checkout.virtualAccount.customerName
+                : (customerName || undefined),
             successUrl: checkout.successUrl || `${window.location.origin}/payments/success`,
             failUrl: checkout.failUrl || `${window.location.origin}/payments/fail`
-        });
+        };
+
+        if (isVirtual && checkout.virtualAccount) {
+            const bank = checkout.virtualAccount.bank;
+            if (bank) requestPayload.virtualAccount = { bank };
+        }
+
+        await payment.requestPayment(requestPayload);
 
         notifyIsland('🔐 토스페이 생체인증 진행 중... 잠시만 기다려 주세요.');
         const result = await resultPromise;
@@ -1257,13 +1470,141 @@
         await finalizeUnlock({ paymentKey: result.paymentKey, orderId: result.orderId, amount: result.amount });
     }
 
+    /**
+     * [자동결제] 카드 등록(빌링키 발급) → 구독 생성.
+     * 토스 requestBillingAuth 는 customerKey 가 필수이며, 성공 리다이렉트에 authKey 를 전달합니다.
+     * 발급된 빌링키로 서버가 매년 자동 청구하며, 상태 변화는 BILLING_DELETED 웹훅으로 동기화됩니다.
+     */
+    async function startBillingRegistration() {
+        if (state.paymentMode !== 'TOSS_LIVE') {
+            if (billingStatusText) {
+                billingStatusText.textContent = '⚠️ 자동결제는 TOSS_LIVE(실결제 키 설정) 환경에서만 등록할 수 있습니다.';
+                billingStatusText.classList.remove('hidden');
+            }
+            return;
+        }
+
+        registerBillingBtn.disabled = true;
+        registerBillingBtn.textContent = '🔄 자동결제 카드 등록창 여는 중...';
+
+        try {
+            const keyRes = await fetch('/api/billing/customer-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionToken: state.sessionToken })
+            });
+            const keyData = await keyRes.json();
+            if (!keyRes.ok || !keyData.customerKey) {
+                notifyIsland(`⚠️ ${keyData.message || '고객 식별키 발급에 실패했습니다.'}`);
+                return;
+            }
+
+            if (!state.paymentsClientKey) {
+                notifyIsland('⚠️ 토스페이먼츠 클라이언트 키가 서버에 설정되지 않았습니다.');
+                return;
+            }
+
+            const TossPayments = await loadTossPaymentsSdk();
+            const tossPayments = TossPayments(state.paymentsClientKey);
+            const payment = tossPayments.payment({ customerKey: keyData.customerKey });
+
+            const resultPromise = waitForTossPaymentResult();
+            const origin = window.location.origin;
+            await payment.requestBillingAuth({
+                method: 'CARD',
+                successUrl: `${origin}/payments/success`,
+                failUrl: `${origin}/payments/fail`
+            });
+
+            const result = await resultPromise;
+            if (!result.ok || !result.billingAuth || !result.authKey) {
+                notifyIsland(`⚠️ ${result.error || '카드 등록이 취소되었습니다.'}`);
+                return;
+            }
+
+            const issueRes = await fetch('/api/billing/issue', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sessionToken: state.sessionToken,
+                    authKey: result.authKey,
+                    startTrial: true
+                })
+            });
+            const issueData = await issueRes.json();
+
+            if (!issueRes.ok) {
+                notifyIsland(`⚠️ ${issueData.message || '자동결제 등록에 실패했습니다.'}`);
+                return;
+            }
+
+            if (billingStatusText) {
+                billingStatusText.textContent = `✅ 자동결제 등록 완료 · 다음 갱신일 ${issueData.subscription && issueData.subscription.nextChargeAt ? String(issueData.subscription.nextChargeAt).slice(0, 10) : '결제일 기준 1년'}`;
+                billingStatusText.classList.remove('hidden');
+            }
+
+            // 등록 즉시 체험/구독 권한이 지급되므로 리포트를 다시 조회
+            const res = await fetch(`/api/session/report?sessionToken=${encodeURIComponent(state.sessionToken)}`);
+            const data = await res.json();
+            if (res.ok && data.status === 'UNLOCKED') {
+                renderUnlockedFromReport(data);
+            }
+        } catch (err) {
+            notifyIsland('⚠️ 자동결제 등록 중 오류가 발생했습니다.');
+        } finally {
+            registerBillingBtn.disabled = false;
+            registerBillingBtn.textContent = '🔄 카드 자동결제 등록 (매년 자동 갱신 · 웹훅으로 상태 동기화)';
+        }
+    }
+
+    if (registerBillingBtn) {
+        registerBillingBtn.addEventListener('click', () => {
+            if (!state.sessionToken) return;
+            triggerHaptic(10);
+            startBillingRegistration();
+        });
+    }
+
     // STEP 2 -> STEP 3: 하드 페이월 해제 및 크레딧 부여 (3단계 햅틱 & 슬롯 카운트업)
     confirmTossPayBtn.addEventListener('click', async () => {
         if (!state.sessionToken) return;
+
+        // 이미 발급된 가상계좌가 있으면 중복 발급을 막고 입금 확인을 안내합니다.
+        if (state.pendingVirtualOrderId && state.paymentMethod === 'VIRTUAL_ACCOUNT') {
+            notifyIsland('🏦 이미 가상계좌가 발급되었습니다. 입금 확인을 기다리는 중입니다.');
+            virtualAccountBox.classList.remove('hidden');
+            startVirtualAccountPolling();
+            return;
+        }
+
         triggerHaptic([15, 40, 25]);
         confirmTossPayBtn.disabled = true;
 
         try {
+            // [앱인토스 환경] 네이티브 인앱결제를 우선 시도하고, 미지원이면 기존 결제창으로 폴백
+            if (state.iapAvailable && window.MuseGlowIAP && state.paymentMethod === 'CARD') {
+                confirmTossPayBtn.textContent = '📱 앱인토스 인앱결제 승인 요청 중...';
+                const iapResult = await window.MuseGlowIAP.tryPurchase({
+                    planTier: state.selectedPlan,
+                    sessionToken: state.sessionToken
+                });
+                if (iapResult.handled) {
+                    if (iapResult.ok) {
+                        // SDK 콜백에서 서버 지급이 완료되었으므로 해제된 리포트를 조회
+                        const res = await fetch(`/api/session/report?sessionToken=${encodeURIComponent(state.sessionToken)}`);
+                        const data = await res.json();
+                        if (res.ok && data.status === 'UNLOCKED') {
+                            renderUnlockedFromReport(data);
+                        } else {
+                            notifyIsland('⚠️ 인앱결제는 완료되었지만 지급 확인이 지연되고 있습니다. 잠시 후 다시 확인해 주세요.');
+                        }
+                    } else {
+                        notifyIsland(`⚠️ ${iapResult.reason || '인앱결제가 취소되었습니다.'}`);
+                    }
+                    return;
+                }
+            }
+
             if (state.paymentMode === 'TOSS_LIVE') {
                 await startTossLivePayment();
             } else {
@@ -1277,9 +1618,7 @@
             notifyIsland('⚠️ 결제 처리 중 오류가 발생했습니다.');
         } finally {
             confirmTossPayBtn.disabled = false;
-            confirmTossPayBtn.textContent = state.paymentMode === 'TOSS_LIVE'
-                ? '토스페이먼츠로 결제하고 전체 처방전 잠금 해제하기'
-                : '토스페이로 1초 만에 승인하고 전체 처방전 잠금 해제하기';
+            syncPaymentMethodUI();
         }
     });
 
@@ -1382,5 +1721,7 @@
 
     // 초기 쇼핑함 카운트 동기화 및 설정 로드
     renderShoppingListModalContent();
+    syncPaymentMethodUI();
     loadServerConfig();
+    syncIapAvailability();
 })();
