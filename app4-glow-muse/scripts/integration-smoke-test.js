@@ -144,6 +144,114 @@ function startAppServer(envOverrides) {
 }
 
 // ============================================================================
+// [목 Supabase(PostgREST) 서버] 최소 REST 규격 + 의도적 장애 모드 지원
+// ============================================================================
+function startMockSupabaseServer({ serviceKey, failMode = false } = {}) {
+    /** table → Array<row> 형태의 초경량 인메모리 저장소 */
+    const tables = new Map();
+
+    const server = http.createServer((req, res) => {
+        let raw = '';
+        req.on('data', (chunk) => { raw += chunk.toString('utf8'); });
+        req.on('end', () => {
+            if (failMode) {
+                res.writeHead(503, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: 'Supabase 장애 시뮬레이션' }));
+                return;
+            }
+
+            // [보안 검증] apikey + Bearer 토큰이 모두 정확한 Service Role Key 인지 확인
+            if (req.headers.apikey !== serviceKey || req.headers.authorization !== `Bearer ${serviceKey}`) {
+                res.writeHead(401, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: 'invalid api key' }));
+                return;
+            }
+
+            const url = new URL(req.url, 'http://127.0.0.1');
+            const table = url.pathname.replace('/rest/v1/', '');
+            if (!table) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: 'unknown route' }));
+                return;
+            }
+
+            if (!tables.has(table)) {
+                tables.set(table, []);
+            }
+            const rows = tables.get(table);
+
+            const sendRows = (payload) => {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(payload));
+            };
+
+            // eq 필터 파싱 (col=eq.value)
+            const filters = [...url.searchParams.entries()]
+                .filter(([k, v]) => k !== 'limit' && k !== 'order' && k !== 'on_conflict' && k !== 'select')
+                .map(([k, v]) => ({ column: k, value: String(v).replace(/^eq\./, '') }));
+
+            if (req.method === 'GET') {
+                const matched = rows.filter((row) => filters.every((f) => String(row[f.column]) === f.value));
+                const limit = Number(url.searchParams.get('limit')) || matched.length;
+                sendRows(matched.slice(0, limit));
+                return;
+            }
+
+            if (req.method === 'POST') {
+                // upsert (resolution=merge-duplicates)
+                let body = {};
+                try {
+                    body = raw ? JSON.parse(raw) : {};
+                } catch (err) {
+                    body = {};
+                }
+
+                const existingIndex = rows.findIndex((row) => filters.every((f) => String(row[f.column]) === f.value));
+                if (existingIndex >= 0) {
+                    rows[existingIndex] = { ...rows[existingIndex], ...body };
+                    sendRows([rows[existingIndex]]);
+                } else {
+                    rows.push(body);
+                    sendRows([body]);
+                }
+                return;
+            }
+
+            if (req.method === 'PATCH') {
+                let body = {};
+                try {
+                    body = raw ? JSON.parse(raw) : {};
+                } catch (err) {
+                    body = {};
+                }
+                const updated = [];
+                rows.forEach((row, index) => {
+                    if (filters.every((f) => String(row[f.column]) === f.value)) {
+                        rows[index] = { ...row, ...body };
+                        updated.push(rows[index]);
+                    }
+                });
+                sendRows(updated);
+                return;
+            }
+
+            res.writeHead(405, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'method not allowed' }));
+        });
+    });
+
+    return new Promise((resolve) => {
+        server.listen(0, '127.0.0.1', () => resolve({
+            server,
+            port: server.address().port,
+            /** 테스트 검증용: 테이블 행 조회 */
+            rows: (table) => (tables.get(table) || []).slice(),
+            tableNames: () => [...tables.keys()]
+        }));
+    });
+}
+
+// ============================================================================
 // [목 토스페이먼츠 서버] /v1/payments/confirm · /v1/payments/{key}/cancel
 // ============================================================================
 function startMockTossServer({ secretKey }) {
@@ -517,6 +625,172 @@ async function runTossLiveScenario() {
     }
 }
 
+/**
+ * [시나리오 D] Supabase 영속화 — 저장·암호화·서버 재시작 후 세션 복원 검증
+ */
+async function runSupabasePersistenceScenario() {
+    console.log('\n▶ [시나리오 D] Supabase 영속화 (목 PostgREST 서버)');
+
+    const serviceKey = 'test-service-role-key-abcdef';
+    const supa = await startMockSupabaseServer({ serviceKey });
+    const baseEnv = {
+        VIP_ANNUAL_PRICE: '79000',
+        MONETIZATION_PRICE: '9900',
+        VIP_CREDIT_CAP: '100',
+        ENCRYPTION_MASTER_KEY: 'c'.repeat(64),
+        SUPABASE_URL: `http://127.0.0.1:${supa.port}`,
+        SUPABASE_SERVICE_ROLE_KEY: serviceKey
+    };
+
+    const appPort = 5000 + Math.floor(Math.random() * 200);
+    const first = await startAppServer({ ...baseEnv, PORT: String(appPort) });
+    const base = `http://127.0.0.1:${first.port}`;
+    let sessionToken = null;
+
+    try {
+        const statusRes = await requestJson(`${base}/api/persistence/status`);
+        record('시나리오 D 영속화 모드 SUPABASE 전환',
+            statusRes.body.persistence.mode === 'SUPABASE',
+            `mode=${statusRes.body.persistence.mode}`);
+
+        const diagRes = await requestJson(`${base}/api/glow/diagnose`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nickname: '영속화뮤즈', monthlyBeautySpendManwon: 30 })
+        });
+        sessionToken = diagRes.body.sessionToken;
+
+        const orderRes = await requestJson(`${base}/api/payment/order`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, planTier: 'VIP_ANNUAL' })
+        });
+
+        const unlockRes = await requestJson(`${base}/api/payment/unlock`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, planTier: 'VIP_ANNUAL', paidAmount: 79000 })
+        });
+        record('시나리오 D 영속화 상태에서 결제 정상 동작',
+            unlockRes.body.status === 'UNLOCKED');
+
+        // DB에 실제로 행이 기록되었는지
+        await sleep(200);
+        const sessionRows = supa.rows('glow_muse_runtime_sessions');
+        const orderRows = supa.rows('glow_muse_runtime_orders');
+        const paymentRows = supa.rows('glow_muse_runtime_payments');
+
+        record('시나리오 D 세션 원장 DB 기록',
+            sessionRows.length === 1 && sessionRows[0].session_token === sessionToken,
+            `sessions=${sessionRows.length}`);
+        record('시나리오 D 주문 원장 DB 기록 + 금액 서버 확정',
+            orderRows.length >= 1 && orderRows[0].amount_krw === 79000,
+            `orders=${orderRows.length} amount=${orderRows[0] && orderRows[0].amount_krw}`);
+        record('시나리오 D 결제 원장 DB 기록',
+            paymentRows.length === 1 && paymentRows[0].paid_amount_krw === 79000,
+            `payments=${paymentRows.length}`);
+
+        // [보안] 평문 개인정보(닉네임)가 DB에 저장되지 않았는지
+        const allRowsJson = JSON.stringify([
+            ...sessionRows, ...orderRows, ...paymentRows
+        ]);
+        record('시나리오 D 민감정보 평문 저장 금지(AES-256-GCM 암호화)',
+            !allRowsJson.includes('영속화뮤즈')
+            && Boolean(sessionRows[0] && sessionRows[0].encrypted_payload && sessionRows[0].iv_hex && sessionRows[0].auth_tag_hex),
+            '닉네임 평문 미검출 + iv/auth_tag 존재');
+
+        record('시나리오 D 주문 상태가 PAID 로 갱신',
+            orderRows.some((r) => r.status === 'PAID'),
+            orderRows.map((r) => r.status).join(','));
+    } finally {
+        first.child.kill();
+        await sleep(300);
+    }
+
+    // ---- 서버 재시작 후 세션이 DB에서 복원되는지 (Read-Through 검증) ----
+    const second = await startAppServer({ ...baseEnv, PORT: String(appPort) });
+    try {
+        const statusRes = await requestJson(`${second.port && `http://127.0.0.1:${second.port}`}/api/persistence/status`);
+        record('시나리오 D 재시작 후 인메모리 원장 0개(복원 전)',
+            statusRes.body.persistence.counts.sessions === 0,
+            `sessions=${statusRes.body.persistence.counts.sessions}`);
+
+        // 재시작된 서버에서 이전 세션으로 훅 액션 호출 → DB에서 세션을 복원해 처리해야 함
+        const hookRes = await requestJson(`http://127.0.0.1:${second.port}/api/hook/action`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionToken, actionType: 'DAILY_CHECKIN' })
+        });
+        record('시나리오 D 서버 재시작 후 세션 DB 복원(Read-Through)',
+            hookRes.body.status === 'HOOK_CHECKIN_SUCCESS' && hookRes.body.remainingCredits === 88,
+            `status=${hookRes.body.status} remaining=${hookRes.body.remainingCredits}`);
+    } finally {
+        second.child.kill();
+    }
+
+    supa.server.close();
+}
+
+/**
+ * [시나리오 E] Supabase 장애 → 자동 인메모리 폴백 (무중단 검증)
+ */
+async function runSupabaseFailureScenario() {
+    console.log('\n▶ [시나리오 E] DB 장애 시 자동 인메모리 폴백');
+
+    const serviceKey = 'test-service-role-key-failure';
+    const supa = await startMockSupabaseServer({ serviceKey, failMode: true });
+    const appPort = 5300 + Math.floor(Math.random() * 100);
+
+    const { child, port } = await startAppServer({
+        PORT: String(appPort),
+        VIP_ANNUAL_PRICE: '79000',
+        MONETIZATION_PRICE: '9900',
+        VIP_CREDIT_CAP: '100',
+        ENCRYPTION_MASTER_KEY: 'd'.repeat(64),
+        SUPABASE_URL: `http://127.0.0.1:${supa.port}`,
+        SUPABASE_SERVICE_ROLE_KEY: serviceKey,
+        SUPABASE_TIMEOUT_MS: '2000'
+    });
+
+    const base = `http://127.0.0.1:${port}`;
+
+    try {
+        const statusRes = await requestJson(`${base}/api/persistence/status`);
+        record('시나리오 E DB 장애 감지 → IN_MEMORY_FALLBACK',
+            statusRes.body.persistence.mode === 'IN_MEMORY_FALLBACK',
+            `mode=${statusRes.body.persistence.mode}`);
+
+        const diagRes = await requestJson(`${base}/api/glow/diagnose`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nickname: '장애뮤즈', monthlyBeautySpendManwon: 30 })
+        });
+        record('시나리오 E DB 장애 중에도 진단 정상 동작',
+            diagRes.body.status === 'SUCCESS');
+
+        const unlockRes = await requestJson(`${base}/api/payment/unlock`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionToken: diagRes.body.sessionToken,
+                planTier: 'VIP_ANNUAL',
+                paidAmount: 79000
+            })
+        });
+        record('시나리오 E DB 장애 중에도 결제·잠금 해제 정상 동작',
+            unlockRes.body.status === 'UNLOCKED' && unlockRes.body.receipt.remainingCredits === 90,
+            `remaining=${unlockRes.body.receipt && unlockRes.body.receipt.remainingCredits}`);
+
+        const statusAfter = await requestJson(`${base}/api/persistence/status`);
+        record('시나리오 E 서킷 브레이커 동작(연속 실패 기록)',
+            statusAfter.body.persistence.client.consecutiveFailures > 0,
+            `failures=${statusAfter.body.persistence.client.consecutiveFailures} circuit=${statusAfter.body.persistence.client.circuitOpen}`);
+    } finally {
+        child.kill();
+        supa.server.close();
+    }
+}
+
 async function main() {
     console.log('====================================================================');
     console.log('🧪 [MuseGlow AI v5.0] 실제 AI 연동 & 결제 게이트웨이 통합 스모크 테스트');
@@ -529,6 +803,8 @@ async function main() {
         await runScenario('시나리오 A', { withAi: false });
         await runScenario('시나리오 B', { withAi: true, aiBaseUrl });
         await runTossLiveScenario();
+        await runSupabasePersistenceScenario();
+        await runSupabaseFailureScenario();
     } finally {
         mock.server.close();
     }

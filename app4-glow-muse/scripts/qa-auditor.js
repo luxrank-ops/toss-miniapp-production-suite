@@ -30,8 +30,10 @@ const {
 const { getAiStatus } = require('../backend/services/aiProvider');
 const { mergeSkinScanResult } = require('../backend/services/aiEnrichment');
 const { createOrder, resolvePlan, getPaymentStatus } = require('../backend/services/paymentGateway');
+// [QA-08] Supabase 영속화 계층 검증용
+const persistence = require('../backend/services/persistenceStore');
 
-function runQaAudit() {
+async function runQaAudit() {
     const projectRoot = path.resolve(__dirname, '..');
     const checks = [];
 
@@ -47,7 +49,7 @@ function runQaAudit() {
         id: 'QA-01',
         name: '.env.example 동적 플레이스홀더(VIP 연간 패스·크레딧 한도 포함) 규격 검증',
         passed: hasBlankPlaceholders,
-        score: hasBlankPlaceholders ? 12 : 0
+        score: hasBlankPlaceholders ? 10 : 0
     });
 
     // 2. AES-256-GCM 암호화 및 복호화 무결성 검증 (규칙 8)
@@ -63,7 +65,7 @@ function runQaAudit() {
         id: 'QA-02',
         name: 'AES-256-GCM 양방향 암호화 및 난수 IV 무결성 검증',
         passed: cryptoPassed,
-        score: cryptoPassed ? 12 : 0
+        score: cryptoPassed ? 10 : 0
     });
 
     // 3. [1순위 app-business-evaluator] Hard Paywall & 21일 체험 고LTV 가격 정책 검증
@@ -79,7 +81,7 @@ function runQaAudit() {
         id: 'QA-03',
         name: '[1순위 BIZ-EVAL] Hard Paywall(10.7%) & 21일 장기 체험 + 고LTV 가격 검증',
         passed: hardPaywallPassed,
-        score: hardPaywallPassed ? 15 : 0
+        score: hardPaywallPassed ? 14 : 0
     });
 
     // 4. [2순위 top-tier-app-consultant] Nir Eyal Hook + 4주 이원화 회복 곡선 + 최저가/CPA 검증
@@ -97,7 +99,7 @@ function runQaAudit() {
         id: 'QA-04',
         name: '[2순위 Consultant] 4주 회복 이원화 곡선(SOS vs 방치) & 최저가/청담 CPA 검증',
         passed: consultantPassed,
-        score: consultantPassed ? 18 : 0
+        score: consultantPassed ? 16 : 0
     });
 
     // 5. [3순위 Cross-Store & 4순위 Toss-Top10] AI 추구미 포토 스튜디오 & 라이브 티커/영수증 모달 검증
@@ -114,7 +116,7 @@ function runQaAudit() {
         id: 'QA-05',
         name: '[3·4순위 Design] AI 포토 스튜디오 Before/After & 실시간 티커 & 처방 영수증 모달 검증',
         passed: designAndInteractionPassed,
-        score: designAndInteractionPassed ? 18 : 0
+        score: designAndInteractionPassed ? 16 : 0
     });
 
     // 6. Pydantic AI 스키마 규격 비즈니스 평가 JSON & Supabase SQL 번호 규칙(001_~005_) 검증
@@ -128,9 +130,9 @@ function runQaAudit() {
         sqlFiles.every((f) => /^\d{3}_.+\.sql$/.test(f));
     checks.push({
         id: 'QA-06',
-        name: 'Pydantic AI 스키마 JSON(9.6점) 및 Supabase SQL 000_ 번호 규칙(001~005) 검증',
+        name: 'Pydantic AI 스키마 JSON(9.6점) 및 Supabase SQL 000_ 번호 규칙(001~006) 검증',
         passed: schemaAndSqlPassed,
-        score: schemaAndSqlPassed ? 12 : 0
+        score: schemaAndSqlPassed ? 10 : 0
     });
 
     // 7. [실제 AI 연동 & 실결제 게이트웨이] 폴백 안전성 + 금액 위변조 방어 검증
@@ -182,7 +184,50 @@ function runQaAudit() {
         id: 'QA-07',
         name: '[실전 연동] AI 게이트웨이 폴백·응답 검증 & 토스페이먼츠 서버 금액 확정(위변조 방어) 검증',
         passed: aiAndPaymentPassed,
-        score: aiAndPaymentPassed ? 13 : 0
+        score: aiAndPaymentPassed ? 12 : 0
+    });
+
+    // 8. [Supabase 영속화] 마이그레이션 규칙 준수 + DB 미설정 시 무중단 인메모리 폴백 검증
+    const migrationFiles = sqlFiles;
+    const hasPersistenceMigration = migrationFiles.includes('006_create_runtime_persistence_tables.sql');
+
+    // DB 미설정 상태에서 저장소가 예외 없이 동작하고 메모리 값은 유지되는지 검증
+    const sampleSession = {
+        sessionToken: 'glow_qa_persistence',
+        isPremiumUnlocked: false,
+        remainingCredits: 0,
+        aiStatus: 'PENDING'
+    };
+    let persistencePassed = false;
+    let persistenceDetail = '';
+    try {
+        await persistence.sessions.set(sampleSession.sessionToken, sampleSession);
+        const cached = persistence.sessions.get(sampleSession.sessionToken);
+        const status = persistence.getStatus();
+        const roundTrip = persistence.parseEncryptedRow(
+            persistence.buildEncryptedRow({ nickname: '영속화검증' }, { remaining_credits: 7 })
+        );
+
+        persistencePassed =
+            hasPersistenceMigration &&
+            typeof status.mode === 'string' &&
+            ['SUPABASE', 'IN_MEMORY_FALLBACK'].includes(status.mode) &&
+            Boolean(cached) && cached.sessionToken === sampleSession.sessionToken &&
+            roundTrip && roundTrip.nickname === '영속화검증' &&
+            envExampleContent.includes('SUPABASE_URL=') &&
+            envExampleContent.includes('SUPABASE_SERVICE_ROLE_KEY=');
+        persistenceDetail = `mode=${status.mode} migration006=${hasPersistenceMigration}`;
+    } catch (err) {
+        persistencePassed = false;
+        persistenceDetail = err.message;
+    }
+
+    checks.push({
+        id: 'QA-08',
+        name: '[영속화] Supabase 마이그레이션(006) 규칙 준수 & DB 미설정 시 무중단 인메모리 폴백 검증',
+        passed: persistencePassed,
+        score: persistencePassed ? 12 : 0,
+        detail: persistenceDetail
     });
 
     const totalScore = checks.reduce((sum, item) => sum + item.score, 0);
@@ -196,21 +241,19 @@ function runQaAudit() {
         checks
     };
 
-    if (require.main === module) {
-        console.log('====================================================================');
-        console.log(`🔍 [4대 에이전트 합동 QA v5.0] 통합 감사 결과: [STATUS: ${report.status}] (${report.totalScore}/100점 | 상업 생존점수: ${report.businessEvaluatorViabilityScore}/10.0)`);
-        for (const c of checks) {
-            console.log(`  - [${c.passed ? 'PASS' : 'FAIL'}] (${c.score}점) ${c.id}: ${c.name}`);
-        }
-        console.log('====================================================================');
-    }
-
     return report;
 }
 
 if (require.main === module) {
-    const result = runQaAudit();
-    process.exit(result.status === 'PASS' ? 0 : 1);
+    runQaAudit().then((result) => {
+        console.log('====================================================================');
+        console.log(`🔍 [4대 에이전트 합동 QA v5.0] 통합 감사 결과: [STATUS: ${result.status}] (${result.totalScore}/100점 | 상업 생존점수: ${result.businessEvaluatorViabilityScore}/10.0)`);
+        for (const c of result.checks) {
+            console.log(`  - [${c.passed ? 'PASS' : 'FAIL'}] (${c.score}점) ${c.id}: ${c.name}${c.detail ? ` — ${c.detail}` : ''}`);
+        }
+        console.log('====================================================================');
+        process.exit(result.status === 'PASS' ? 0 : 1);
+    });
 }
 
 module.exports = {

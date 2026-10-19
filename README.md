@@ -59,12 +59,17 @@ node app4-glow-muse/backend/server.js
 | AI 피부 스캔 | 결정론적 로컬 엔진 | **Gemini / OpenAI / Anthropic Vision** 실시간 분석 |
 | 프리미엄 처방전 | 하드코딩 문구 | **실제 LLM 개인화 생성** (결제 전 백그라운드 사전 생성) |
 | 결제 | 샌드박스 시뮬레이션 | **토스페이먼츠 실결제** (서버 최종 승인 / Server Confirm) |
+| 데이터 | 인메모리(재시작 시 소실) | **Supabase 영속화** (세션·주문·매출 원장 DB 저장, §추가) |
 
 ```bash
 cd app4-glow-muse
-cp .env.example .env      # AI 키 + 토스페이먼츠 키 주입
-npm run verify            # QA 감사(100/100) + 통합 스모크 테스트(39항목)
+cp .env.example .env      # AI 키 + 토스페이먼츠 키 + Supabase 키 주입
+npm run verify            # QA 감사(100/100) + 통합 스모크 테스트(52항목)
 ```
+
+영속화는 `supabase/migrations/006_create_runtime_persistence_tables.sql` 실행 후
+`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` 를 주입하면 활성화됩니다.
+미설정·DB 장애 시에는 **자동으로 인메모리 모드로 폴백**하여 서비스가 중단되지 않습니다.
 
 - 상세 설정 가이드: [`app4-glow-muse/docs/AI_PAYMENT_SETUP.md`](./app4-glow-muse/docs/AI_PAYMENT_SETUP.md)
 - 연동 중 발견해 수정한 실제 취약점(금액 위변조·크레딧 이중 지급·타 세션 주문 도용 등)도 위 문서에 정리되어 있습니다.

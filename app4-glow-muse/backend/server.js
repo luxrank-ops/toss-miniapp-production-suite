@@ -43,17 +43,45 @@ const {
     cancelPayment,
     getOrder,
     getRawOrder,
+    hydrateOrder,
     markOrderPaid,
     getPaymentStatus,
     resolvePlan,
     ORDER_STATUS
 } = require('./services/paymentGateway');
 
-// 인메모리 보안 원장 (Supabase 001~005 테이블과 1:1 매핑)
-const encryptedDiagnosisStore = new Map();
-const paymentLedgerStore = new Map();
-const encryptedSkinScanStore = new Map();
-const encryptedPhotoStudioStore = new Map();
+// [영속화 계층] 인메모리 캐시 + Supabase 이중 기록 (DB 미설정·장애 시 인메모리로 자동 폴백)
+const persistence = require('./services/persistenceStore');
+
+// Supabase 001~006 테이블과 1:1 매핑되는 런타임 원장
+// - 읽기는 이 Map(메모리)에서 즉시 처리하고, 미스 시 persistence 가 DB에서 복원(hydrate)합니다.
+const encryptedDiagnosisStore = persistence.sessions.memory;
+const paymentLedgerStore = persistence.payments.memory;
+const encryptedSkinScanStore = persistence.skinScans.memory;
+const encryptedPhotoStudioStore = persistence.studioLogs.memory;
+
+/**
+ * 세션 조회 (메모리 → DB 순으로 탐색)
+ * - 다중 인스턴스·서버 재시작 상황에서도 세션이 끊기지 않도록 Read-Through 로 동작합니다.
+ */
+async function resolveSession(sessionToken) {
+    if (!sessionToken) {
+        return null;
+    }
+    const cached = encryptedDiagnosisStore.get(sessionToken);
+    if (cached) {
+        return cached;
+    }
+    return await persistence.sessions.hydrate(sessionToken);
+}
+
+/** 세션 변경 사항을 Supabase 에 반영 (실패해도 메모리 값은 유지되므로 무해) */
+function persistSession(record) {
+    if (!record || !record.sessionToken) {
+        return;
+    }
+    persistence.sessions.set(record.sessionToken, record).catch(() => { /* 폴백: 로그만 남김 */ });
+}
 
 const MIME_TYPES = {
     '.html': 'text/html; charset=utf-8',
@@ -177,6 +205,11 @@ async function handleRequest(req, res) {
             ai: getAiStatus(),
             // [실제 결제 연동 상태] TOSS_LIVE면 결제위젯, 아니면 샌드박스 시뮬레이션
             payments: getPaymentStatus(),
+            // [영속화 상태] SUPABASE 면 DB 영구 보관, 아니면 인메모리(재시작 시 소실)
+            persistence: {
+                mode: persistence.getStatus().mode,
+                configured: persistence.getStatus().configured
+            },
             creditCostMatrix: {
                 initialDiagnosis: 10,
                 dailyCheckin: 2,
@@ -213,8 +246,9 @@ async function handleRequest(req, res) {
             // 세션이 존재하고 이미 하드 페이월이 해제된 유저가 정밀 재스캔을 요청할 경우 -3 크레딧 차감
             let creditsDeducted = 0;
             let remainingCredits = null;
-            if (sessionToken && encryptedDiagnosisStore.has(sessionToken)) {
-                const record = encryptedDiagnosisStore.get(sessionToken);
+            const scanSession = await resolveSession(sessionToken);
+            if (sessionToken && scanSession) {
+                const record = scanSession;
                 if (record.isPremiumUnlocked && record.remainingCredits >= 3) {
                     record.remainingCredits -= 3;
                     creditsDeducted = 3;
@@ -248,12 +282,32 @@ async function handleRequest(req, res) {
                 scannedAt: new Date().toISOString()
             });
 
-            encryptedSkinScanStore.set(scanId, {
+            const scanRecord = {
                 scanId,
                 encryptedMetadata: encryptedScanRecord,
                 rawPhotoRetained: false,
+                skinType: scanResult.skinType,
+                skinBarrierScore: scanResult.skinBarrierScore,
+                barrierStatus: scanResult.barrierStatus,
+                aiProvider: aiScan.aiMeta.provider || null,
+                aiApplied: Boolean(aiScan.aiMeta.applied),
                 createdAt: new Date().toISOString()
-            });
+            };
+
+            // Supabase 영속화 (실패 시에도 메모리 값은 유지되어 서비스는 정상 동작)
+            await persistence.skinScans.set(scanId, scanRecord);
+
+            // AI 추론 원가·지연 관제 로그 (Thin Wrapper 역마진 방어)
+            persistence.logAiInference({
+                sessionToken,
+                provider: aiScan.aiMeta.provider,
+                model: aiScan.aiMeta.model,
+                requestKind: 'SKIN_SCAN',
+                applied: Boolean(aiScan.aiMeta.applied),
+                fallbackUsed: Boolean(aiScan.aiMeta.fallbackUsed),
+                latencyMs: aiScan.aiMeta.latencyMs || 0,
+                error: aiScan.aiMeta.error || null
+            }).catch(() => {});
 
             sendJson(res, 200, {
                 ...scanResult,
@@ -311,7 +365,8 @@ async function handleRequest(req, res) {
                 createdAt: new Date().toISOString()
             };
 
-            encryptedDiagnosisStore.set(sessionToken, record);
+            // Supabase 영속화 (세션 생성 시점 기록)
+            await persistence.sessions.set(sessionToken, record);
 
             // [실제 AI 리포트 생성] 사용자가 결제를 고민하는 동안 백그라운드에서 미리 생성합니다.
             // - 결제 직후 즉시 제공되어 TTV(Time To Value) 3분 규칙을 지킵니다.
@@ -322,6 +377,20 @@ async function handleRequest(req, res) {
             }).then(({ report, aiMeta }) => {
                 record.aiEnrichment = { report, aiMeta };
                 record.aiStatus = aiMeta.applied ? 'AI_READY' : 'FALLBACK_READY';
+                persistSession(record);
+
+                // AI 추론 원가·지연 관제 로그
+                persistence.logAiInference({
+                    sessionToken,
+                    provider: aiMeta.provider,
+                    model: aiMeta.model,
+                    requestKind: 'PREMIUM_REPORT',
+                    applied: Boolean(aiMeta.applied),
+                    fallbackUsed: Boolean(aiMeta.fallbackUsed),
+                    latencyMs: aiMeta.latencyMs || 0,
+                    error: aiMeta.error || null
+                }).catch(() => {});
+
                 return record.aiEnrichment;
             }).catch((err) => {
                 record.aiEnrichment = {
@@ -390,12 +459,11 @@ async function handleRequest(req, res) {
             const config = getDynamicConfig();
             const paymentMode = config.payments.mode;
 
-            if (!sessionToken || !encryptedDiagnosisStore.has(sessionToken)) {
+            const record = await resolveSession(sessionToken);
+            if (!record) {
                 sendJson(res, 404, { status: 'ERROR', message: '유효하지 않은 진단 세션입니다. 먼저 온보딩 스캔을 실행해 주세요.' });
                 return;
             }
-
-            const record = encryptedDiagnosisStore.get(sessionToken);
 
             let resolvedPlanTier = null;
             let appliedPrice = 0;
@@ -416,7 +484,7 @@ async function handleRequest(req, res) {
                     return;
                 }
 
-                const order = getRawOrder(orderId);
+                const order = getRawOrder(orderId) || (await hydrateOrder(orderId));
                 if (!order) {
                     sendJson(res, 404, { status: 'ORDER_NOT_FOUND', message: '존재하지 않는 주문입니다. 결제를 다시 시작해 주세요.' });
                     return;
@@ -530,7 +598,7 @@ async function handleRequest(req, res) {
 
             const tossOrderId = usedOrderId || ('TOSS_GLOW_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex').toUpperCase());
 
-            paymentLedgerStore.set(tossOrderId, {
+            const paymentLedgerRecord = {
                 tossOrderId,
                 sessionToken,
                 planTier: record.selectedPlanTier,
@@ -544,7 +612,11 @@ async function handleRequest(req, res) {
                 aiProvider: aiEnrichment.aiMeta.provider || null,
                 aiApplied: Boolean(aiEnrichment.aiMeta.applied),
                 paidAt: new Date().toISOString()
-            });
+            };
+
+            // 결제 완료 원장은 반드시 영속화 (매출 데이터 유실 방지)
+            await persistence.payments.set(tossOrderId, paymentLedgerRecord);
+            await persistence.sessions.set(sessionToken, record);
 
             sendJson(res, 200, {
                 status: 'UNLOCKED',
@@ -588,7 +660,8 @@ async function handleRequest(req, res) {
             const body = await parseJsonBody(req);
             const { sessionToken, planTier } = body;
 
-            if (!sessionToken || !encryptedDiagnosisStore.has(sessionToken)) {
+            const orderSession = await resolveSession(sessionToken);
+            if (!orderSession) {
                 sendJson(res, 404, { status: 'ERROR', message: '유효하지 않은 진단 세션입니다.' });
                 return;
             }
@@ -655,13 +728,17 @@ async function handleRequest(req, res) {
             }
 
             // 환불 시 지급했던 크레딧 회수 (부정 사용 방지)
-            if (order && encryptedDiagnosisStore.has(order.sessionToken)) {
-                const record = encryptedDiagnosisStore.get(order.sessionToken);
+            const refundRecord = order ? await resolveSession(order.sessionToken) : null;
+            if (refundRecord) {
+                const record = refundRecord;
                 record.isPremiumUnlocked = false;
                 record.remainingCredits = 0;
                 record.selectedPlanTier = 'REFUNDED';
                 record.aiStatus = 'PENDING';
                 record.aiEnrichment = null;
+
+                // 환불 상태를 DB 에도 반영 (정산 데이터 정합성)
+                await persistence.sessions.set(record.sessionToken, record);
             }
 
             sendJson(res, 200, {
@@ -673,6 +750,20 @@ async function handleRequest(req, res) {
         } catch (err) {
             sendJson(res, 500, { status: 'ERROR', message: err.message });
         }
+        return;
+    }
+
+    // ------------------------------------------------------------------------
+    // [API 5-5] GET /api/persistence/status  (영속화 상태 진단 — 운영 관제용)
+    // ------------------------------------------------------------------------
+    if (req.method === 'GET' && pathname === '/api/persistence/status') {
+        sendJson(res, 200, {
+            status: 'OK',
+            persistence: persistence.getStatus(),
+            recommendation: persistence.getStatus().mode === 'SUPABASE'
+                ? null
+                : 'Supabase 미연결: 서버 재시작 시 세션·주문·매출 데이터가 소실됩니다. .env에 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 를 주입하고 006번 마이그레이션을 적용하세요.'
+        });
         return;
     }
 
@@ -705,12 +796,11 @@ async function handleRequest(req, res) {
             const body = await parseJsonBody(req);
             const { sessionToken, actionType } = body;
 
-            if (!sessionToken || !encryptedDiagnosisStore.has(sessionToken)) {
+            const record = await resolveSession(sessionToken);
+            if (!record) {
                 sendJson(res, 404, { status: 'ERROR', message: '유효하지 않은 세션입니다. 먼저 하단 1번 온보딩 스캔을 진행해 주세요.' });
                 return;
             }
-
-            const record = encryptedDiagnosisStore.get(sessionToken);
             if (!record.isPremiumUnlocked) {
                 sendJson(res, 403, {
                     status: 'HARD_PAYWALL_BLOCKED',
@@ -744,6 +834,8 @@ async function handleRequest(req, res) {
                     body.swellingLevel || 'HIGH'
                 );
 
+                persistSession(record);
+
                 sendJson(res, 200, {
                     status: 'HOOK_CHECKIN_SUCCESS',
                     creditsDeducted: cost,
@@ -776,6 +868,8 @@ async function handleRequest(req, res) {
                 });
                 record.encryptedPouchVault.push(encryptedVaultItem);
 
+                persistSession(record);
+
                 sendJson(res, 200, {
                     status: 'POUCH_INVEST_SUCCESS',
                     creditsDeducted: cost,
@@ -805,7 +899,14 @@ async function handleRequest(req, res) {
                     renderedAt: new Date().toISOString()
                 });
                 const studioLogId = 'studio_' + crypto.randomBytes(8).toString('hex');
-                encryptedPhotoStudioStore.set(studioLogId, encryptedStudioRecord);
+                await persistence.studioLogs.set(studioLogId, {
+                    studioLogId,
+                    sessionToken,
+                    vibeKey: body.vibeKey || 'SILK_OLD_MONEY',
+                    encryptedStudioRecord,
+                    renderedAt: new Date().toISOString()
+                });
+                persistSession(record);
 
                 sendJson(res, 200, {
                     status: 'STUDIO_RENDER_SUCCESS',
@@ -821,6 +922,7 @@ async function handleRequest(req, res) {
                 const viralBonus = 3;
                 record.remainingCredits += viralBonus;
                 const receiptSerial = '#MG-2026-' + Math.floor(1000 + Math.random() * 9000);
+                persistSession(record);
                 sendJson(res, 200, {
                     status: 'VIRAL_SHARE_REWARDED',
                     receiptSerial,
@@ -900,9 +1002,15 @@ async function handleRequest(req, res) {
     sendJson(res, 404, { status: 'NOT_FOUND', message: '요청하신 리소스를 찾을 수 없습니다.' });
 }
 
-function startServer(customPort) {
+async function startServer(customPort) {
     const config = getDynamicConfig();
     const targetPort = customPort !== undefined ? customPort : (config.port || 3003);
+
+    // [영속화 초기화] Supabase 연결을 먼저 확인합니다.
+    // - 성공 → 세션·주문·매출 원장이 DB 에 영구 보관됩니다.
+    // - 실패 → 인메모리 모드로 자동 전환되며 서버는 정상 기동됩니다(무중단 설계).
+    const persistenceResult = await persistence.initialize();
+
     const server = http.createServer(handleRequest);
 
     return new Promise((resolve, reject) => {
@@ -928,6 +1036,10 @@ function startServer(customPort) {
                 ? `💳 결제 게이트웨이: [TOSS_LIVE] 토스페이먼츠 실결제 (clientKey ${payStatus.clientKeyMasked})`
                 : `💳 결제 게이트웨이: [SANDBOX] 시뮬레이션 (TOSS_PAYMENTS_CLIENT_KEY / SECRET_KEY 미설정)`);
             console.log(`   ↳ AI 상태 API : GET /api/ai/status   | 주문 생성: POST /api/payment/order`);
+            console.log(persistenceResult.mode === 'SUPABASE'
+                ? `🗄️ 영속화        : [SUPABASE] 세션·주문·매출 원장 DB 영구 보관`
+                : `🗄️ 영속화        : [IN-MEMORY] Supabase 미연결 → 재시작 시 데이터 소실 (${persistenceResult.error || '키 미설정'})`);
+            console.log(`   ↳ 영속화 상태 : GET /api/persistence/status`);
             console.log('====================================================================');
             resolve({ server, port: actualPort, config });
         });

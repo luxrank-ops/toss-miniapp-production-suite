@@ -24,6 +24,8 @@
 
 const crypto = require('crypto');
 const { getDynamicConfig, maskSensitiveString } = require('../config/envLoader');
+// [영속화] 주문 원장을 Supabase 에도 기록 (서버 재시작·다중 인스턴스 대응)
+const persistence = require('./persistenceStore');
 
 /**
  * 주문 원장 (실서비스에서는 Supabase/PostgreSQL orders 테이블로 이관)
@@ -119,6 +121,7 @@ function createOrder(input = {}) {
     };
 
     paymentOrdersStore.set(orderId, order);
+    persistOrder(order);
 
     return {
         ok: true,
@@ -199,6 +202,7 @@ async function confirmPayment(input = {}) {
             order.status = ORDER_STATUS.FAILED;
             order.updatedAt = new Date().toISOString();
             order.failureReason = (parsed && parsed.message) || rawBody.slice(0, 300);
+            persistOrder(order);
             return {
                 ok: false,
                 error: `토스페이먼츠 승인 실패: ${order.failureReason}`,
@@ -221,6 +225,7 @@ async function confirmPayment(input = {}) {
             cardNumber: (parsed && parsed.card && parsed.card.number) ? parsed.card.number : null,
             installmentPlanMonths: (parsed && parsed.card && parsed.card.installmentPlanMonths) || 0
         };
+        persistOrder(order);
 
         return { ok: true, receipt: order.tossReceipt };
     } catch (err) {
@@ -249,6 +254,7 @@ async function cancelPayment(input = {}) {
         if (target) {
             target.status = ORDER_STATUS.CANCELED;
             target.updatedAt = new Date().toISOString();
+            persistOrder(target);
         }
         return { ok: true, mode: 'SANDBOX_SIMULATION', canceled: Boolean(target) };
     }
@@ -289,6 +295,7 @@ async function cancelPayment(input = {}) {
         if (target) {
             target.status = ORDER_STATUS.CANCELED;
             target.updatedAt = new Date().toISOString();
+            persistOrder(target);
         }
 
         return { ok: true, mode: 'TOSS_LIVE', receipt: parsed };
@@ -335,7 +342,34 @@ function markOrderPaid(orderId, patch = {}) {
         return null;
     }
     Object.assign(order, patch, { status: ORDER_STATUS.PAID, updatedAt: new Date().toISOString() });
+    persistOrder(order);
     return order;
+}
+
+/**
+ * 주문 원장을 Supabase 에 기록합니다. (실패해도 메모리 값은 유지되어 무해)
+ */
+function persistOrder(order) {
+    if (!order) {
+        return;
+    }
+    persistence.orders.set(order.orderId, order).catch(() => { /* 인메모리 폴백 */ });
+}
+
+/**
+ * 메모리에 없는 주문을 Supabase 에서 복원합니다. (다중 인스턴스·재시작 대응)
+ * @param {string} orderId
+ * @returns {Promise<Object|null>}
+ */
+async function hydrateOrder(orderId) {
+    if (paymentOrdersStore.has(orderId)) {
+        return paymentOrdersStore.get(orderId);
+    }
+    const restored = await persistence.orders.hydrate(orderId);
+    if (restored) {
+        paymentOrdersStore.set(orderId, restored);
+    }
+    return restored;
 }
 
 /**
@@ -362,6 +396,8 @@ module.exports = {
     createOrder,
     confirmPayment,
     cancelPayment,
+    hydrateOrder,
+    persistOrder,
     getOrder,
     getRawOrder,
     markOrderPaid,

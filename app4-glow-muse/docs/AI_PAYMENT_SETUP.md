@@ -12,6 +12,7 @@
 | 피부 스캔 | 로컬 결정론적 엔진(목업) | **실제 Vision 모델**(Gemini / GPT / Claude) 분석 |
 | 프리미엄 처방전 | 하드코딩 문구 | **실제 LLM 개인화 생성** |
 | 결제 | 샌드박스 시뮬레이션 | **토스페이먼츠 실결제**(서버 최종 승인) |
+| 데이터 보관 | 인메모리(재시작 시 소실) | **Supabase 영속화**(§5) |
 | 앱 상태 배지 | `🧠 LOCAL 목업 엔진` | `🧠 LIVE · GEMINI` |
 
 **.env 키가 없으면 자동으로 왼쪽, 있으면 오른쪽으로 동작합니다. 코드 수정은 필요 없습니다.**
@@ -143,9 +144,46 @@ curl http://localhost:3003/api/config        # ai + payments 블록
 
 ---
 
-## 5. 아직 남아 있는 것 (다음 단계)
+## 5. Supabase 영속화 (런타임 원장 DB 저장)
 
-- [ ] **Supabase 영속화** — 현재 주문·세션 원장은 인메모리 `Map`이라 서버 재시작 시 소실. `supabase/migrations/` 스키마로 이관 필요
+세션·주문·매출 원장을 인메모리에서 Supabase(PostgreSQL)로 이관하는 설정입니다.
+**미설정 시에도 앱은 그대로 동작**하며, DB 장애 시에도 자동으로 인메모리로 폴백합니다.
+
+### 설정 순서
+1. Supabase 대시보드 → **SQL Editor**에서 `supabase/migrations/006_create_runtime_persistence_tables.sql` 실행
+2. `.env`에 아래 두 줄 추가 후 서버 재시작
+```env
+SUPABASE_URL=https://xxxxxxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...    # ⚠️ 서버 전용. 클라이언트 노출 절대 금지
+SUPABASE_PERSISTENCE=auto                # 강제로 끄려면 off
+SUPABASE_TIMEOUT_MS=5000
+```
+
+### 저장되는 테이블 (`006` 마이그레이션)
+| 테이블 | 내용 |
+| :--- | :--- |
+| `glow_muse_runtime_sessions` | 진단 세션 전체(AES-256-GCM 암호화) + 상태·크레딧 인덱스 컬럼 |
+| `glow_muse_runtime_orders` | 주문 생애주기(CREATED→PAID/FAILED/CANCELED), **영수증은 암호화 저장** |
+| `glow_muse_runtime_payments` | 결제 완료 원장(정산·매출 분석용) |
+| `glow_muse_runtime_skin_scans` | AI 피부 스캔 결과(원본 사진 저장 안 함) |
+| `glow_muse_runtime_studio_logs` | AI 포토 스튜디오 렌더링 로그 |
+| `glow_muse_ai_inference_logs` | AI 추론 원가·지연 관제 로그 |
+
+### 장애 대응 설계
+- **Write-Through**: 메모리 기록 → DB upsert (DB 실패해도 메모리 값 유지)
+- **Read-Through**: 캐시 미스 시 DB에서 복호화해 메모리에 적재 → **서버 재시작·다중 인스턴스에서도 세션 유지**
+- **서킷 브레이커**: 연속 3회 실패 시 30초간 DB 접근 생략(응답 지연 방지), 이후 자동 재개
+
+```bash
+curl http://localhost:3003/api/persistence/status   # 영속화 상태·성공/실패 카운터
+```
+
+---
+
+## 6. 아직 남아 있는 것 (다음 단계)
+
+- [x] ~~**Supabase 영속화**~~ — 완료 (`006` 마이그레이션 + 영속화 계층)
 - [ ] **토스페이먼츠 웹훅(가상계좌·정기결제)** — 현재는 즉시 승인(카드)만 지원
 - [ ] **App-in-Toss 인앱 결제 SDK** — 토스 미니앱 전용 결제는 파트너 콘솔 승인 후 별도 연동 필요
 - [ ] **AI 응답 캐싱** — 동일 입력 재요청 시 비용 절감(현재는 매 호출 신규 추론)
+- [ ] **Supabase RLS 활성화** — 운영 전 `006` 마이그레이션 하단 주석의 RLS 정책 적용 권장

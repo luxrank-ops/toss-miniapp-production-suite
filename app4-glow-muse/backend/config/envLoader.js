@@ -101,6 +101,7 @@ function getDynamicConfig() {
         vipAnnualPrice,
         ai: getAiConfig(),
         payments: getPaymentConfig(),
+        persistence: getSupabaseConfig(),
         formattedVipAnnualPrice: `₩${vipAnnualPrice.toLocaleString('ko-KR')}`,
         monthlyEquivalentFormatted: `월 ₩${Math.round(vipAnnualPrice / 12).toLocaleString('ko-KR')}`,
         trialDays,
@@ -209,10 +210,55 @@ function getPaymentConfig() {
     };
 }
 
+/**
+ * [Supabase 영속화 설정]
+ * - URL + Service Role Key 가 모두 주입되면 DB 영속화(SUPABASE) 모드로 동작합니다.
+ * - 미주입 또는 SUPABASE_PERSISTENCE=off 이면 인메모리(IN_MEMORY_FALLBACK) 모드로 동작합니다.
+ * - 런타임에 DB 장애가 감지되면 자동으로 인메모리로 폴백합니다(무중단 설계).
+ * - ※ Service Role Key 는 RLS 를 우회하는 서버 전용 키이므로 클라이언트에 절대 노출 금지
+ */
+function getSupabaseConfig() {
+    loadDotEnv();
+
+    const url = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+    const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+    const switchValue = (process.env.SUPABASE_PERSISTENCE || 'auto').trim().toLowerCase();
+
+    const parsedTimeout = parseInt(process.env.SUPABASE_TIMEOUT_MS || '5000', 10);
+
+    const forcedOff = switchValue === 'off' || switchValue === 'false' || switchValue === 'none';
+    const configured = Boolean(url && serviceKey) && !forcedOff;
+
+    return {
+        url,
+        restUrl: url ? `${url}/rest/v1` : null,
+        serviceKey,
+        serviceKeyMasked: serviceKey ? maskSensitiveString(serviceKey) : null,
+        enabled: configured,
+        forcedOff,
+        mode: configured ? 'SUPABASE' : 'IN_MEMORY_FALLBACK',
+        timeoutMs: (!Number.isNaN(parsedTimeout) && parsedTimeout >= 500) ? parsedTimeout : 5000,
+        tables: {
+            sessions: 'glow_muse_runtime_sessions',
+            orders: 'glow_muse_runtime_orders',
+            payments: 'glow_muse_runtime_payments',
+            skinScans: 'glow_muse_runtime_skin_scans',
+            studioLogs: 'glow_muse_runtime_studio_logs',
+            aiLogs: 'glow_muse_ai_inference_logs'
+        },
+        reason: configured
+            ? null
+            : (forcedOff
+                ? 'SUPABASE_PERSISTENCE=off 로 설정되어 인메모리 모드로 동작합니다.'
+                : 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 미설정 — 인메모리 모드로 동작합니다(데이터는 재시작 시 소실).')
+    };
+}
+
 module.exports = {
     loadDotEnv,
     maskSensitiveString,
     getDynamicConfig,
     getAiConfig,
-    getPaymentConfig
+    getPaymentConfig,
+    getSupabaseConfig
 };
